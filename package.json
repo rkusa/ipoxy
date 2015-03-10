@@ -1,6 +1,6 @@
 {
-  "name": "epoxy",
-  "version": "0.4.1",
+  "name": "ipoxy",
+  "version": "0.5.0",
   "description": "Declarative template data binding.",
   "main": "lib/index.js",
   "scripts": {
@@ -9,14 +9,18 @@
   },
   "repository": {
     "type": "git",
-    "url": "git@github.com:rkusa/epoxy.git"
+    "url": "git@github.com:rkusa/ipoxy.git"
   },
   "author": "Markus Ast <npm.m@rkusa.st>",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/rkusa/epoxy/issues"
+    "url": "https://github.com/rkusa/ipoxy/issues"
   },
-  "homepage": "https://github.com/rkusa/epoxy",
+  "homepage": "https://github.com/rkusa/ipoxy",
+  "dependencies": {
+    "immutable": "^3.6.4",
+    "virtual-dom": "^2.0.1"
+  },
   "devDependencies": {
     "browserify": "^8.0.3",
     "chai": "^1.9.1",
@@ -26,9 +30,5 @@
     "mocha": "^2.1.0",
     "testem": "^0.6.18",
     "vinyl-source-stream": "^1.0.0"
-  },
-  "dependencies": {
-    "immutable": "^3.6.4",
-    "virtual-dom": "^2.0.1"
   }
 }

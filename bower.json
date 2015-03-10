@@ -1,13 +1,13 @@
 {
-  "name": "epoxy",
-  "version": "0.4.1",
+  "name": "ipoxy",
+  "version": "0.5.0",
   "authors": [
     "Markus Ast <npm.m@rkusa.st>"
   ],
   "description": "Declarative template data binding.",
-  "main": "epoxy.js",
+  "main": "ipoxy.js",
   "license": "MIT",
-  "homepage": "https://github.com/rkusa/epoxy",
+  "homepage": "https://github.com/rkusa/ipoxy",
   "ignore": [
     "**/.*",
     "gulpfile.js",
