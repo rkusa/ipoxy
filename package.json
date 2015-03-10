@@ -26,5 +26,9 @@
     "mocha": "^2.1.0",
     "testem": "^0.6.18",
     "vinyl-source-stream": "^1.0.0"
+  },
+  "dependencies": {
+    "immutable": "^3.6.4",
+    "virtual-dom": "^2.0.1"
   }
 }
