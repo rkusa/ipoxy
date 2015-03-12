@@ -29,9 +29,9 @@ gulp.task('testem', ['browserify'], function (done) {
 var browserify = require('browserify')
 var source     = require('vinyl-source-stream')
 gulp.task('browserify', function() {
-  return browserify({ entries: './lib/index.js', standalone: 'epoxy' })
+  return browserify({ entries: './lib/index.js', standalone: 'ipoxy' })
       .bundle()
-      .pipe(source('epoxy.js'))
+      .pipe(source('ipoxy.js'))
       .pipe(gulp.dest('./dist'))
 })
 
