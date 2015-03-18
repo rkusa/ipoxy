@@ -19,7 +19,7 @@
   "homepage": "https://github.com/rkusa/ipoxy",
   "dependencies": {
     "immutable": "^3.6.4",
-    "virtual-dom": "^2.0.1"
+    "virtual-dom": "rkusa/virtual-dom#custom-elements"
   },
   "devDependencies": {
     "browserify": "^8.0.3",
