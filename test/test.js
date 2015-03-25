@@ -127,10 +127,9 @@ describe('template', function() {
 
       model = model.set('color', 'blue')
       setTimeout(function() {
-        alert(span.getAttribute('style'))
         expect(span.getAttribute('style')).to.equal('color: blue')
         done()
-      }, 1000)
+      }, 300)
     })
 
     it('should work for boolean attributes (int)', function(done) {
@@ -148,12 +147,20 @@ describe('template', function() {
       setTimeout(function() {
         expect(checkbox.checked).to.be.false
         done()
-      })
+      }, 300)
     })
 
     it('should work for boolean attributes (out)', function(done) {
       var task     = model.get('tasks').get(0)
-      var fragment = bind('binding-boolean-attribute', task)
+      var fragment = bind('binding-boolean-attribute', ipoxy.model({
+        get: function() {
+          return task
+        },
+        set: function(newVal) {
+          task = newVal
+        }
+      }))
+
       var checkbox = fragment.querySelector('input')
       expect(checkbox.checked).to.be.true
 
@@ -163,27 +170,38 @@ describe('template', function() {
       checkbox.dispatchEvent(changeEvent)
 
       setTimeout(function() {
-        expect(task.isDone).to.be.false
+        expect(task.get('isDone')).to.be.false
         done()
       })
     })
 
     it('should work for input values (in)', function(done) {
       var task     = model.get('tasks').get(0)
-      var fragment = bind('binding-input-value', task)
+      var fragment = bind('binding-input-value', ipoxy.model({
+        get: function() {
+          return task
+        }
+      }))
       var input    = fragment.querySelector('input')
       expect(input.value).to.equal('this')
 
-      task.task = 'something'
+      task = task.set('task', 'something')
       setTimeout(function() {
         expect(input.value).to.equal('something')
         done()
-      })
+      }, 300)
     })
 
     it('should work for input values (out)', function(done) {
       var task     = model.get('tasks').get(0)
-      var fragment = bind('binding-input-value', task)
+      var fragment = bind('binding-input-value', ipoxy.model({
+        get: function() {
+          return task
+        },
+        set: function(newVal) {
+          task = newVal
+        }
+      }))
       var input    = fragment.querySelector('input')
       expect(input.value).to.equal('this')
 
@@ -193,7 +211,7 @@ describe('template', function() {
       input.dispatchEvent(changeEvent)
 
       setTimeout(function() {
-        expect(task.task).to.equal('something')
+        expect(task.get('task')).to.equal('something')
         done()
       })
     })
@@ -221,6 +239,8 @@ function bind(name, model) {
   var template  = document.querySelector('#' + name + '-template')
   var container = document.createElement('div')
   ipoxy.bind(container, template, model)
+
+  document.body.appendChild(container)
 
   return container
 }
