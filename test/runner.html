@@ -53,9 +53,6 @@
 
       <div id="iftrue-expectation">
         <b>Works!</b>
-        <template if="{{ isDone }}">
-          <b>Works!</b>
-        </template>
       </div>
 
       <!-- if helper should not be rendered if evaluated to false -->
@@ -67,9 +64,6 @@
       </template>
 
       <div id="iffalse-expectation">
-        <template if="{{ isDone }}">
-          <b>Works!</b>
-        </template>
       </div>
 
       <!-- repeat helper should work without alias-->
@@ -86,9 +80,6 @@
         <ul>
           <li>this</li>
           <li>that</li>
-          <template repeat="{{ tasks }}">
-            <li>{{ task }}</li>
-          </template>
         </ul>
       </div>
 
@@ -106,9 +97,6 @@
         <ul>
           <li>this</li>
           <li>that</li>
-          <template repeat="{{ tasks as task}}">
-            <li>{{ task.task }}</li>
-          </template>
         </ul>
       </div>
 
@@ -126,9 +114,6 @@
         <ul>
           <li>this</li>
           <li>that</li>
-          <template repeat="{{ tasks }}" if="{{ isVisible }}">
-            <li>{{ task }}</li>
-          </template>
         </ul>
       </div>
 
@@ -144,9 +129,6 @@
 
       <div id="repeatfalse-expectation">
         <ul>
-          <template repeat="{{ tasks }}" if="{{ isVisible }}">
-            <li>{{ task }}</li>
-          </template>
         </ul>
       </div>
 
