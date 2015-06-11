@@ -414,7 +414,6 @@ BooleanAttributeHook.prototype.hook = function(node, prop) {
   }
 
   if (prop === 'checked') {
-    var self = this
     node.addEventListener('change', this._onchange = function() {
       switch (node.type) {
         case 'checkbox':
@@ -1727,6 +1726,7 @@ HTMLWidget.prototype = Object.create(BaseWidget.prototype, {
 
 HTMLWidget.prototype.init = function() {
   var fragment = document.createDocumentFragment()
+  fragment.appendChild(document.createComment('{' + this.key))
 
   var tmp = document.createElement('div')
   tmp.innerHTML = this.value
@@ -1735,8 +1735,25 @@ HTMLWidget.prototype.init = function() {
     fragment.appendChild(child)
   }
 
+  fragment.appendChild(document.createComment(this.key + '}'))
+
   return fragment
 }
+
+HTMLWidget.prototype._update = function(startNode) {
+  if (startNode.nodeType === Node.COMMENT_NODE && startNode.textContent.substr(1) == this.key) {
+    // remove DOMNodes between the fragments
+    // start and end markers
+    var node, next = startNode.nextSibling
+    while ((node = next).nodeType !== Node.COMMENT_NODE || node.textContent !== this.key + '}') {
+      next = node.nextSibling
+      node.parentNode.removeChild(node)
+    }
+  }
+
+  return this.init()
+}
+
 
 },{"./base":17}],19:[function(require,module,exports){
 var VNode = require('virtual-dom/vnode/vnode')
