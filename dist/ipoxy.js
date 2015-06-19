@@ -61,7 +61,7 @@ module.exports = function bind(target, template, locals) {
 
   var updateFn = function() {
     var updated = update(locals)
-    // console.log('CHANGED', root)
+    // console.log('CHANGED', root, vdom, updated)
     root = patch(root, diff(vdom, updated))
     vdom = updated
   }
@@ -414,6 +414,7 @@ BooleanAttributeHook.prototype.hook = function(node, prop) {
   }
 
   if (prop === 'checked') {
+    var self = this
     node.addEventListener('change', this._onchange = function() {
       switch (node.type) {
         case 'checkbox':
