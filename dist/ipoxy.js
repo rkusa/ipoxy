@@ -1795,8 +1795,10 @@ TemplateWidget.prototype.init = function() {
   return template
 }
 
-TemplateWidget.prototype.update  = function(prev, el) {
-  applyProperties(el, this.properties(this.locals))
+TemplateWidget.prototype.update = function(prev, el) {
+  if (el && el instanceof HTMLElement) {
+    applyProperties(el, this.properties(this.locals))
+  }
 
   return el
 }
