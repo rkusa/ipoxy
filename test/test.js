@@ -56,10 +56,10 @@ describe('template', function() {
   var model
   function resetModel() {
     model = ipoxy.fromJS({
-      name: 'rkusa',
+      name:      'rkusa',
       isVisible: true,
-      color: 'red',
-      tasks: [
+      color:     'red',
+      tasks:     [
         { id: 1, isDone: true, task: 'this' },
         { id: 2, isDone: false, task: 'that' }
       ]

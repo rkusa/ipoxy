@@ -11,7 +11,7 @@ gulp.task('watch', ['browserify', 'jison'], function() {
   gulp.watch(['lib/**/*.js'], ['browserify'])
 })
 
-gulp.task('test', ['testem'], function() {
+gulp.task('test', ['testem', 'lint'], function() {
   setImmediate(function() {
     process.exit(0)
   })
@@ -22,7 +22,7 @@ gulp.task('testem', ['browserify'], function (done) {
   var t = new Testem()
   t.startCI({
     'test_page': 'test/runner.html',
-    launch: 'Chrome'
+    launch:      'Chrome'
   }, done)
 })
 
@@ -30,17 +30,22 @@ var browserify = require('browserify')
 var source     = require('vinyl-source-stream')
 gulp.task('browserify', function() {
   return browserify({ entries: './lib/index.js', standalone: 'ipoxy' })
-      .bundle()
-      .pipe(source('ipoxy.js'))
-      .pipe(gulp.dest('./dist'))
+    .bundle()
+    .pipe(source('ipoxy.js'))
+    .pipe(gulp.dest('./dist'))
 })
 
 var eslint = require('gulp-eslint')
 gulp.task('lint', function() {
-  return gulp.src(['!lib/parser/parser.js', 'lib/**/*.js', 'test/**/*.js', 'gulpfile.js'])
-             .pipe(eslint())
-             .pipe(eslint.format())
-             .pipe(eslint.failOnError())
+  return gulp.src([
+      '!lib/parser/parser.js',
+      'lib/**/*.js',
+      'test/**/*.js',
+      'gulpfile.js'
+    ])
+    .pipe(eslint())
+    .pipe(eslint.format('stylish'))
+    .pipe(eslint.failAfterError())
 })
 
 var spawn = require('child_process').spawn
@@ -49,7 +54,7 @@ gulp.task('jison', function(done) {
     '../../node_modules/.bin/jison',
     ['parser.jison', '-m commonjs'],
     {
-      cwd: './lib/parser',
+      cwd:   './lib/parser',
       stdio: 'inherit'
     }
   )
