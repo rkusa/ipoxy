@@ -18,17 +18,17 @@
   },
   "homepage": "https://github.com/rkusa/ipoxy",
   "dependencies": {
-    "immutable": "^3.6.4",
+    "immutable": "^3.7",
     "virtual-dom": "rkusa/virtual-dom#custom-elements"
   },
   "devDependencies": {
-    "browserify": "^9.0.8",
-    "chai": "^2.2.0",
-    "gulp": "^3.8.7",
-    "gulp-eslint": "^0.9.0",
-    "jison": "^0.4.15",
-    "mocha": "^2.1.0",
-    "testem": "^0.8.0-0",
-    "vinyl-source-stream": "^1.0.0"
+    "browserify": "^10.2",
+    "chai": "^3.0",
+    "gulp": "^3.9",
+    "gulp-eslint": "^0.15",
+    "jison": "^0.4",
+    "mocha": "^2.2",
+    "testem": "^0.8",
+    "vinyl-source-stream": "^1.0"
   }
 }

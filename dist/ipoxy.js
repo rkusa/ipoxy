@@ -1,25 +1,4 @@
 (function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.ipoxy = f()}})(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
-var parser = require('./parser')
-exports.parse = parser.parse
-exports.ast   = parser.ast
-
-exports.registerFilter = require('./filter').registerFilter
-
-exports.bind = require('./bind')
-exports.importNode = require('./import-node').importNode
-exports.cloneNode = require('./import-node').cloneNode
-
-var Model = require('./model')
-exports.model = function(fns) {
-  return new Model(fns)
-}
-exports.alias = Model.alias
-
-var immutable = require('immutable')
-exports.fromJS = immutable.fromJS
-exports.Stack = immutable.Stack
-
-},{"./bind":2,"./filter":3,"./import-node":8,"./model":13,"./parser":15,"immutable":26}],2:[function(require,module,exports){
 var immutable = require('immutable')
 var Model = require('./model')
 
@@ -322,7 +301,7 @@ function getNamespace(el) {
     : el.namespaceURI
 }
 
-},{"./hook/attribute":4,"./hook/boolean":6,"./hook/input":7,"./mixin/if":10,"./mixin/repeat":11,"./mixin/unless":12,"./model":13,"./parser":15,"./parser/ast":14,"./widget/html":18,"./widget/template":19,"./widget/text":20,"immutable":26,"virtual-dom/create-element":27,"virtual-dom/diff":28,"virtual-dom/patch":32,"virtual-dom/vnode/vnode":46,"virtual-dom/vnode/vtext":48}],3:[function(require,module,exports){
+},{"./hook/attribute":3,"./hook/boolean":5,"./hook/input":6,"./mixin/if":10,"./mixin/repeat":11,"./mixin/unless":12,"./model":13,"./parser":15,"./parser/ast":14,"./widget/html":18,"./widget/template":19,"./widget/text":20,"immutable":26,"virtual-dom/create-element":27,"virtual-dom/diff":28,"virtual-dom/patch":32,"virtual-dom/vnode/vnode":46,"virtual-dom/vnode/vtext":48}],2:[function(require,module,exports){
 'use strict'
 
 exports.filter = Object.create(null)
@@ -335,7 +314,7 @@ exports.registerFilter('class', function(condition, name) {
   return condition ? name : ''
 })
 
-},{}],4:[function(require,module,exports){
+},{}],3:[function(require,module,exports){
 var BaseHook = require('./base')
 
 var AttributeHook = module.exports = function() {
@@ -373,7 +352,7 @@ AttributeHook.prototype.hook = function(node, name) {
   node.setAttribute(name, value || '')
 }
 
-},{"./base":5}],5:[function(require,module,exports){
+},{"./base":4}],4:[function(require,module,exports){
 var BaseWidget = require('../widget/base')
 
 var BaseHook = module.exports = function() {
@@ -390,7 +369,7 @@ BaseHook.prototype.set = BaseWidget.prototype.set
 BaseHook.prototype.hook = function(/*node, prop, prev*/) {}
 BaseHook.prototype.unhook = function(/*node, prop, next*/) {}
 
-},{"../widget/base":17}],6:[function(require,module,exports){
+},{"../widget/base":17}],5:[function(require,module,exports){
 var BaseHook = require('./base')
 
 var BooleanAttributeHook = module.exports = function() {
@@ -438,7 +417,7 @@ BooleanAttributeHook.prototype.unhook = function (node) {
   }
 }
 
-},{"./base":5}],7:[function(require,module,exports){
+},{"./base":4}],6:[function(require,module,exports){
 var BaseHook = require('./base')
 
 var InputHook = module.exports = function() {
@@ -487,7 +466,7 @@ InputHook.prototype.unhook = function (node) {
   }
 }
 
-},{"./base":5}],8:[function(require,module,exports){
+},{"./base":4}],7:[function(require,module,exports){
 function cloneChildren(parent, target, fn) {
   for (var child = parent.firstChild; child; child = child.nextSibling) {
     target.appendChild(fn(child, true))
@@ -523,7 +502,28 @@ function importNode(node, deep) {
 exports.cloneNode  = cloneNode
 exports.importNode = importNode
 
-},{}],9:[function(require,module,exports){
+},{}],8:[function(require,module,exports){
+var parser = require('./parser')
+exports.parse = parser.parse
+exports.ast   = parser.ast
+
+exports.registerFilter = require('./filter').registerFilter
+
+exports.bind = require('./bind')
+exports.importNode = require('./import-node').importNode
+exports.cloneNode = require('./import-node').cloneNode
+
+var Model = require('./model')
+exports.model = function(fns) {
+  return new Model(fns)
+}
+exports.alias = Model.alias
+
+var immutable = require('immutable')
+exports.fromJS = immutable.fromJS
+exports.Stack = immutable.Stack
+
+},{"./bind":1,"./filter":2,"./import-node":7,"./model":13,"./parser":15,"immutable":26}],9:[function(require,module,exports){
 var BaseWidget = require('../widget/base')
 
 var BaseMixin = module.exports = function() {
@@ -1721,7 +1721,7 @@ BaseWidget.prototype._update = function(el) {
   return this.init()
 }
 
-},{"../filter":3}],18:[function(require,module,exports){
+},{"../filter":2}],18:[function(require,module,exports){
 var BaseWidget = require('./base')
 
 var HTMLWidget = module.exports = function() {
@@ -1803,7 +1803,7 @@ TemplateWidget.prototype.update = function(prev, el) {
   return el
 }
 
-},{"../import-node":8,"virtual-dom/create-element":27,"virtual-dom/vdom/apply-properties":33,"virtual-dom/vnode/vnode":46}],20:[function(require,module,exports){
+},{"../import-node":7,"virtual-dom/create-element":27,"virtual-dom/vdom/apply-properties":33,"virtual-dom/vnode/vnode":46}],20:[function(require,module,exports){
 var BaseWidget = require('./base')
 
 var TextWidget = module.exports = function() {
@@ -2070,32 +2070,64 @@ var substr = 'ab'.substr(-1) === 'b'
 var process = module.exports = {};
 var queue = [];
 var draining = false;
+var currentQueue;
+var queueIndex = -1;
+
+function cleanUpNextTick() {
+    draining = false;
+    if (currentQueue.length) {
+        queue = currentQueue.concat(queue);
+    } else {
+        queueIndex = -1;
+    }
+    if (queue.length) {
+        drainQueue();
+    }
+}
 
 function drainQueue() {
     if (draining) {
         return;
     }
+    var timeout = setTimeout(cleanUpNextTick);
     draining = true;
-    var currentQueue;
+
     var len = queue.length;
     while(len) {
         currentQueue = queue;
         queue = [];
-        var i = -1;
-        while (++i < len) {
-            currentQueue[i]();
+        while (++queueIndex < len) {
+            currentQueue[queueIndex].run();
         }
+        queueIndex = -1;
         len = queue.length;
     }
+    currentQueue = null;
     draining = false;
+    clearTimeout(timeout);
 }
+
 process.nextTick = function (fun) {
-    queue.push(fun);
-    if (!draining) {
+    var args = new Array(arguments.length - 1);
+    if (arguments.length > 1) {
+        for (var i = 1; i < arguments.length; i++) {
+            args[i - 1] = arguments[i];
+        }
+    }
+    queue.push(new Item(fun, args));
+    if (queue.length === 1 && !draining) {
         setTimeout(drainQueue, 0);
     }
 };
 
+// v8 likes predictible objects
+function Item(fun, array) {
+    this.fun = fun;
+    this.array = array;
+}
+Item.prototype.run = function () {
+    this.fun.apply(null, this.array);
+};
 process.title = 'browser';
 process.browser = true;
 process.env = {};
@@ -2147,6 +2179,7 @@ var Iterable = Immutable.Iterable;
 var Iterator = Iterable.Iterator;
 var Seq = Immutable.Seq;
 var Map = Immutable.Map;
+var Record = Immutable.Record;
 
 
 function cursorFrom(rootData, keyPath, onChange) {
@@ -2378,7 +2411,34 @@ function makeCursor(rootData, keyPath, onChange, value) {
   }
   var size = value && value.size;
   var CursorClass = Iterable.isIndexed(value) ? IndexedCursor : KeyedCursor;
-  return new CursorClass(rootData, keyPath, onChange, size);
+  var cursor = new CursorClass(rootData, keyPath, onChange, size);
+
+  if (value instanceof Record) {
+    defineRecordProperties(cursor, value);
+  }
+
+  return cursor;
+}
+
+function defineRecordProperties(cursor, value) {
+  try {
+    value._keys.forEach(setProp.bind(undefined, cursor));
+  } catch (error) {
+    // Object.defineProperty failed. Probably IE8.
+  }
+}
+
+function setProp(prototype, name) {
+  Object.defineProperty(prototype, name, {
+    get: function() {
+      return this.get(name);
+    },
+    set: function(value) {
+      if (!this.__ownerID) {
+        throw new Error('Cannot set on an immutable record.');
+      }
+    }
+  });
 }
 
 function wrappedValue(cursor, keyPath, value) {
@@ -3178,7 +3238,7 @@ exports.from = cursorFrom;
   var src_Math__imul =
     typeof Math.imul === 'function' && Math.imul(0xffffffff, 2) === -2 ?
     Math.imul :
-    function imul(a, b) {
+    function src_Math__imul(a, b) {
       a = a | 0; // int
       b = b | 0; // int
       var c = a & 0xffff;
@@ -3738,19 +3798,24 @@ exports.from = cursorFrom;
 
     // begin or end will be NaN if they were provided as negative numbers and
     // this iterable's size is unknown. In that case, cache first so there is
-    // a known size.
+    // a known size and these do not resolve to NaN.
     if (resolvedBegin !== resolvedBegin || resolvedEnd !== resolvedEnd) {
       return sliceFactory(iterable.toSeq().cacheResult(), begin, end, useKeys);
     }
 
-    var sliceSize = resolvedEnd - resolvedBegin;
-    if (sliceSize < 0) {
-      sliceSize = 0;
+    // Note: resolvedEnd is undefined when the original sequence's length is
+    // unknown and this slice did not supply an end and should contain all
+    // elements after resolvedBegin.
+    // In that case, resolvedSize will be NaN and sliceSize will remain undefined.
+    var resolvedSize = resolvedEnd - resolvedBegin;
+    var sliceSize;
+    if (resolvedSize === resolvedSize) {
+      sliceSize = resolvedSize < 0 ? 0 : resolvedSize;
     }
 
     var sliceSeq = makeSequence(iterable);
 
-    sliceSeq.size = sliceSize === 0 ? sliceSize : iterable.size && sliceSize || undefined;
+    sliceSeq.size = sliceSize;
 
     if (!useKeys && isSeq(iterable) && sliceSize >= 0) {
       sliceSeq.get = function (index, notSetValue) {
@@ -3782,11 +3847,11 @@ exports.from = cursorFrom;
     };
 
     sliceSeq.__iteratorUncached = function(type, reverse) {
-      if (sliceSize && reverse) {
+      if (sliceSize !== 0 && reverse) {
         return this.cacheResult().__iterator(type, reverse);
       }
       // Don't bother instantiating parent iterator if taking 0.
-      var iterator = sliceSize && iterable.__iterator(type, reverse);
+      var iterator = sliceSize !== 0 && iterable.__iterator(type, reverse);
       var skipped = 0;
       var iterations = 0;
       return new src_Iterator__Iterator(function()  {
@@ -4282,7 +4347,13 @@ exports.from = cursorFrom;
     };
 
     src_Map__Map.prototype.mergeIn = function(keyPath) {var iters = SLICE$0.call(arguments, 1);
-      return this.updateIn(keyPath, emptyMap(), function(m ) {return m.merge.apply(m, iters)});
+      return this.updateIn(
+        keyPath,
+        emptyMap(),
+        function(m ) {return typeof m.merge === 'function' ?
+          m.merge.apply(m, iters) :
+          iters[iters.length - 1]}
+      );
     };
 
     src_Map__Map.prototype.mergeDeep = function(/*...iters*/) {
@@ -4294,7 +4365,13 @@ exports.from = cursorFrom;
     };
 
     src_Map__Map.prototype.mergeDeepIn = function(keyPath) {var iters = SLICE$0.call(arguments, 1);
-      return this.updateIn(keyPath, emptyMap(), function(m ) {return m.mergeDeep.apply(m, iters)});
+      return this.updateIn(
+        keyPath,
+        emptyMap(),
+        function(m ) {return typeof m.mergeDeep === 'function' ?
+          m.mergeDeep.apply(m, iters) :
+          iters[iters.length - 1]}
+      );
     };
 
     src_Map__Map.prototype.sort = function(comparator) {
@@ -5457,7 +5534,7 @@ exports.from = cursorFrom;
     var newLevel = list._level;
     var newRoot = list._root;
 
-    // New origin might require creating a higher root.
+    // New origin might need creating a higher root.
     var offsetShift = 0;
     while (newOrigin + offsetShift < 0) {
       newRoot = new VNode(newRoot && newRoot.array.length ? [undefined, newRoot] : [], owner);
@@ -5474,7 +5551,7 @@ exports.from = cursorFrom;
     var oldTailOffset = getTailOffset(oldCapacity);
     var newTailOffset = getTailOffset(newCapacity);
 
-    // New size might require creating a higher root.
+    // New size might need creating a higher root.
     while (newTailOffset >= 1 << (newLevel + SHIFT)) {
       newRoot = new VNode(newRoot && newRoot.array.length ? [newRoot] : [], owner);
       newLevel += SHIFT;
@@ -6913,6 +6990,7 @@ exports.from = cursorFrom;
     },
 
     isSuperset: function(iter) {
+      iter = typeof iter.isSubset === 'function' ? iter : Iterable(iter);
       return iter.isSubset(this);
     },
 
@@ -8575,5 +8653,5 @@ function appendPatch(apply, patch) {
     }
 }
 
-},{"../vnode/handle-thunk":39,"../vnode/is-thunk":40,"../vnode/is-vnode":42,"../vnode/is-vtext":43,"../vnode/is-widget":44,"../vnode/vpatch":47,"./diff-props":49,"x-is-array":31}]},{},[1])(1)
+},{"../vnode/handle-thunk":39,"../vnode/is-thunk":40,"../vnode/is-vnode":42,"../vnode/is-vtext":43,"../vnode/is-widget":44,"../vnode/vpatch":47,"./diff-props":49,"x-is-array":31}]},{},[8])(8)
 });
