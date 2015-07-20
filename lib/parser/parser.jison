@@ -10,7 +10,7 @@
 
 <epoxy>\s+              /* skip whitespace */
 <epoxy>'as'             { return 'as' }
-<epoxy>(?!\d)[^\{\}\.\,\s\|\\'\(\)]+ { return 'IDENTIFIER' }
+<epoxy>(?!\d)[^\{\}\.\,\s\d\|\\'\(\)]+ { return 'IDENTIFIER' }
 <epoxy>'{{'             { return 'OPEN' }
 <epoxy>'}}'             { this.begin('INITIAL')
                           return 'CLOSE' }
@@ -19,7 +19,7 @@
 <epoxy>'|'              { return '|' }
 <epoxy>'('              { return '(' }
 <epoxy>')'              { return ')' }
-<epoxy>[\']             { return 'QUOTE' }
+<epoxy>\'[^\']*\'       { return 'STRING' }
 <epoxy>\d+              { return 'NUMBER' }
 
 <INITIAL,epoxy><<EOF>>  { return 'EOF' }
@@ -119,8 +119,8 @@ argument
     ;
 
 string
-    : QUOTE identifier QUOTE
-        { $$ = $identifier }
+    : STRING
+        { $$ = $1.slice(1, -1) }
     ;
 
 number
