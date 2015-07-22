@@ -10,7 +10,7 @@
 
 <epoxy>\s+              /* skip whitespace */
 <epoxy>'as'             { return 'as' }
-<epoxy>(?!\d)[^\{\}\.\,\s\d\|\\'\(\)]+ { return 'IDENTIFIER' }
+<epoxy>(?!\d)[^\{\}\.\,\s\|\\'\(\)]+ { return 'IDENTIFIER' }
 <epoxy>'{{'             { return 'OPEN' }
 <epoxy>'}}'             { this.begin('INITIAL')
                           return 'CLOSE' }
