@@ -1783,7 +1783,7 @@ HTMLWidget.prototype.init = function() {
 }
 
 HTMLWidget.prototype._update = function(startNode) {
-  if (startNode.nodeType === Node.COMMENT_NODE && startNode.textContent.substr(1) === this.key) {
+  if (startNode.nodeType === Node.COMMENT_NODE && startNode.textContent.substr(1) === this.key.toString()) {
     // remove DOMNodes between the fragments
     // start and end markers
     var node, next = startNode.nextSibling
