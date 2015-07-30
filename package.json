@@ -19,16 +19,16 @@
   "homepage": "https://github.com/rkusa/ipoxy",
   "dependencies": {
     "immutable": "^3.7",
-    "virtual-dom": "rkusa/virtual-dom#custom-elements"
+    "virtual-dom": "rkusa/virtual-dom#ipoxy"
   },
   "devDependencies": {
-    "browserify": "^10.2",
+    "browserify": "^11.0",
     "chai": "^3.0",
     "gulp": "^3.9",
     "gulp-eslint": "^0.15",
     "jison": "^0.4",
     "mocha": "^2.2",
-    "testem": "^0.8",
+    "testem": "^0.9",
     "vinyl-source-stream": "^1.0"
   }
 }
