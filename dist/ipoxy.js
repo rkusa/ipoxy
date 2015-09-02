@@ -477,6 +477,11 @@ InputHook.prototype.unhook = function (node) {
 },{"./base":4}],7:[function(require,module,exports){
 'use strict'
 
+function isTemplate(el) {
+  // return el instanceof HTMLTemplateElement
+  return el.localName === 'template' // IE fix
+}
+
 function cloneChildren(parent, target, fn) {
   for (var child = parent.firstChild; child; child = child.nextSibling) {
     target.appendChild(fn(child, true))
@@ -491,7 +496,10 @@ function cloneNode(node, deep) {
 
   cloneChildren(node, clone, cloneNode)
 
-  if (node instanceof HTMLTemplateElement) {
+  if (isTemplate(node)) {
+    if (!clone.content) { // IE fix
+      clone.content = document.createDocumentFragment()
+    }
     cloneChildren(node.content, clone.content, cloneNode)
   }
 
@@ -506,7 +514,10 @@ function importNode(node, deep) {
 
   cloneChildren(node, clone, importNode)
 
-  if (node instanceof HTMLTemplateElement) {
+  if (isTemplate(node)) {
+    if (!clone.content) { // IE fix
+      clone.content = document.createDocumentFragment()
+    }
     cloneChildren(node.content, clone.content, cloneNode)
   }
 
