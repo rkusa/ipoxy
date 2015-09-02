@@ -1,8 +1,9 @@
 (function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.ipoxy = f()}})(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
 'use strict'
 
-var immutable = require('immutable')
-var Model = require('./model')
+var immutable  = require('immutable')
+var Model      = require('./model')
+var isTemplate = require('./utils').isTemplate
 
 var VNode = require('virtual-dom/vnode/vnode')
 var VText = require('virtual-dom/vnode/vtext')
@@ -14,7 +15,7 @@ module.exports = function bind(target, template, locals) {
     throw new TypeError('Target must be an element node')
   }
 
-  if (!(template instanceof HTMLTemplateElement)) {
+  if (!isTemplate(template)) {
     locals = template
     template = undefined
   }
@@ -166,7 +167,7 @@ function visitElementNode(ctx, node) {
 
   var id = ctx.nextId++
 
-  if (node instanceof HTMLTemplateElement) {
+  if (isTemplate(node)) {
     var head
 
     MIXINS.forEach(function(Mixin) {
@@ -298,7 +299,7 @@ function getNamespace(el) {
     : el.namespaceURI
 }
 
-},{"./hook/attribute":3,"./hook/boolean":5,"./hook/input":6,"./mixin/if":10,"./mixin/repeat":11,"./mixin/unless":12,"./model":13,"./parser":15,"./parser/ast":14,"./widget/html":18,"./widget/template":19,"./widget/text":20,"immutable":26,"virtual-dom/diff":27,"virtual-dom/patch":31,"virtual-dom/vnode/vnode":45,"virtual-dom/vnode/vtext":47}],2:[function(require,module,exports){
+},{"./hook/attribute":3,"./hook/boolean":5,"./hook/input":6,"./mixin/if":9,"./mixin/repeat":10,"./mixin/unless":11,"./model":12,"./parser":14,"./parser/ast":13,"./utils":16,"./widget/html":18,"./widget/template":19,"./widget/text":20,"immutable":26,"virtual-dom/diff":27,"virtual-dom/patch":31,"virtual-dom/vnode/vnode":45,"virtual-dom/vnode/vtext":47}],2:[function(require,module,exports){
 'use strict'
 
 exports.filter = Object.create(null)
@@ -477,59 +478,6 @@ InputHook.prototype.unhook = function (node) {
 },{"./base":4}],7:[function(require,module,exports){
 'use strict'
 
-function isTemplate(el) {
-  // return el instanceof HTMLTemplateElement
-  return el.localName === 'template' // IE fix
-}
-
-function cloneChildren(parent, target, fn) {
-  for (var child = parent.firstChild; child; child = child.nextSibling) {
-    target.appendChild(fn(child, true))
-  }
-}
-
-function cloneNode(node, deep) {
-  var clone = node.cloneNode(false)
-  if (!deep) {
-    return clone
-  }
-
-  cloneChildren(node, clone, cloneNode)
-
-  if (isTemplate(node)) {
-    if (!clone.content) { // IE fix
-      clone.content = document.createDocumentFragment()
-    }
-    cloneChildren(node.content, clone.content, cloneNode)
-  }
-
-  return clone
-}
-
-function importNode(node, deep) {
-  var clone = document.importNode(node, false)
-  if (!deep) {
-    return clone
-  }
-
-  cloneChildren(node, clone, importNode)
-
-  if (isTemplate(node)) {
-    if (!clone.content) { // IE fix
-      clone.content = document.createDocumentFragment()
-    }
-    cloneChildren(node.content, clone.content, cloneNode)
-  }
-
-  return clone
-}
-
-exports.cloneNode  = cloneNode
-exports.importNode = importNode
-
-},{}],8:[function(require,module,exports){
-'use strict'
-
 var parser = require('./parser')
 exports.parse = parser.parse
 exports.ast   = parser.ast
@@ -537,8 +485,11 @@ exports.ast   = parser.ast
 exports.registerFilter = require('./filter').registerFilter
 
 exports.bind = require('./bind')
-exports.importNode = require('./import-node').importNode
-exports.cloneNode = require('./import-node').cloneNode
+
+var utils = require('./utils')
+exports.importNode = utils.importNode
+exports.cloneNode  = utils.cloneNode
+exports.isTemplate = utils.isTemplate
 
 var Model = require('./model')
 exports.model = function(fns) {
@@ -550,7 +501,7 @@ var immutable = require('immutable')
 exports.fromJS = immutable.fromJS
 exports.Stack = immutable.Stack
 
-},{"./bind":1,"./filter":2,"./import-node":7,"./model":13,"./parser":15,"immutable":26}],9:[function(require,module,exports){
+},{"./bind":1,"./filter":2,"./model":12,"./parser":14,"./utils":16,"immutable":26}],8:[function(require,module,exports){
 'use strict'
 
 var BaseWidget = require('../widget/base')
@@ -568,7 +519,7 @@ BaseMixin.prototype.set = BaseWidget.prototype.set
 
 BaseMixin.prototype.execute = function() {}
 
-},{"../widget/base":17}],10:[function(require,module,exports){
+},{"../widget/base":17}],9:[function(require,module,exports){
 'use strict'
 
 var BaseMixin = require('./base')
@@ -607,7 +558,7 @@ IfMixin.prototype.execute = function(content) {
   return []
 }
 
-},{"./base":9}],11:[function(require,module,exports){
+},{"./base":8}],10:[function(require,module,exports){
 'use strict'
 
 var BaseMixin = require('./base')
@@ -672,7 +623,7 @@ RepeatMixin.prototype.execute = function(content) {
   return children
 }
 
-},{"../model":13,"./base":9}],12:[function(require,module,exports){
+},{"../model":12,"./base":8}],11:[function(require,module,exports){
 'use strict'
 
 var IfMixin = require('./if')
@@ -698,7 +649,7 @@ UnlessMixin.isUnlessMixin = function(node) {
   return node.tagName === 'TEMPLATE' && node.hasAttribute('unless')
 }
 
-},{"./if":10}],13:[function(require,module,exports){
+},{"./if":9}],12:[function(require,module,exports){
 'use strict'
 
 var Model = module.exports = function(fns) {
@@ -769,7 +720,7 @@ Model.alias = function(alias, fns) {
   })
 }
 
-},{"immutable":26}],14:[function(require,module,exports){
+},{"immutable":26}],13:[function(require,module,exports){
 /*eslint-disable no-constant-condition, no-loop-func*/
 'use strict'
 
@@ -998,7 +949,7 @@ exports.Filter = function(name, args) {
   this.args = args
 }
 
-},{"../model":13,"immutable":26,"immutable/contrib/cursor":25}],15:[function(require,module,exports){
+},{"../model":12,"immutable":26,"immutable/contrib/cursor":25}],14:[function(require,module,exports){
 'use strict'
 
 var parser = require('./parser').parser
@@ -1012,7 +963,7 @@ function parse(input) {
 
 exports.parse = parse
 
-},{"./ast":14,"./parser":16}],16:[function(require,module,exports){
+},{"./ast":13,"./parser":15}],15:[function(require,module,exports){
 (function (process){
 /* parser generated by jison 0.4.15 */
 /*
@@ -1697,7 +1648,61 @@ if (typeof module !== 'undefined' && require.main === module) {
 }
 }
 }).call(this,require('_process'))
-},{"_process":24,"fs":21,"path":23}],17:[function(require,module,exports){
+},{"_process":24,"fs":21,"path":23}],16:[function(require,module,exports){
+'use strict'
+
+function isTemplate(el) {
+  // return el instanceof HTMLTemplateElement
+  return el.localName === 'template' // IE fix
+}
+
+function cloneChildren(parent, target, fn) {
+  for (var child = parent.firstChild; child; child = child.nextSibling) {
+    target.appendChild(fn(child, true))
+  }
+}
+
+function cloneNode(node, deep) {
+  var clone = node.cloneNode(false)
+  if (!deep) {
+    return clone
+  }
+
+  cloneChildren(node, clone, cloneNode)
+
+  if (isTemplate(node)) {
+    if (!clone.content) { // IE fix
+      clone.content = document.createDocumentFragment()
+    }
+    cloneChildren(node.content, clone.content, cloneNode)
+  }
+
+  return clone
+}
+
+function importNode(node, deep) {
+  var clone = document.importNode(node, false)
+  if (!deep) {
+    return clone
+  }
+
+  cloneChildren(node, clone, importNode)
+
+  if (isTemplate(node)) {
+    if (!clone.content) { // IE fix
+      clone.content = document.createDocumentFragment()
+    }
+    cloneChildren(node.content, clone.content, cloneNode)
+  }
+
+  return clone
+}
+
+exports.isTemplate  = isTemplate
+exports.cloneNode   = cloneNode
+exports.importNode  = importNode
+
+},{}],17:[function(require,module,exports){
 'use strict'
 
 var filter = require('../filter').filter
@@ -1812,7 +1817,7 @@ HTMLWidget.prototype._update = function(startNode) {
 'use strict'
 
 var applyProperties = require('virtual-dom/vdom/apply-properties')
-var cloneNode = require('../import-node').cloneNode
+var cloneNode = require('../utils').cloneNode
 
 var TemplateWidget = module.exports = function(id, locals, template, properties) {
   this.key        = id
@@ -1848,7 +1853,7 @@ TemplateWidget.prototype.update = function(prev, el) {
   return el
 }
 
-},{"../import-node":7,"virtual-dom/vdom/apply-properties":32}],20:[function(require,module,exports){
+},{"../utils":16,"virtual-dom/vdom/apply-properties":32}],20:[function(require,module,exports){
 'use strict'
 
 var BaseWidget = require('./base')
@@ -8696,5 +8701,5 @@ function appendPatch(apply, patch) {
     }
 }
 
-},{"../vnode/handle-thunk":38,"../vnode/is-thunk":39,"../vnode/is-vnode":41,"../vnode/is-vtext":42,"../vnode/is-widget":43,"../vnode/vpatch":46,"./diff-props":48,"x-is-array":30}]},{},[8])(8)
+},{"../vnode/handle-thunk":38,"../vnode/is-thunk":39,"../vnode/is-vnode":41,"../vnode/is-vtext":42,"../vnode/is-widget":43,"../vnode/vpatch":46,"./diff-props":48,"x-is-array":30}]},{},[7])(7)
 });
