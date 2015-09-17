@@ -10,6 +10,55 @@ var VText = require('virtual-dom/vnode/vtext')
 var diff  = require('virtual-dom/diff')
 var patch = require('virtual-dom/patch')
 
+var started = false
+var observing = []
+
+function start() {
+  if (started) {
+    return
+  }
+
+  started = true
+
+  var frameLength = 33 // this is ~1/30th of a second, in milliseconds (1000/30)
+  var lastFrame = 0
+  requestAnimationFrame(function animate(delta) {
+    if(delta - lastFrame > frameLength) {
+      lastFrame = delta
+
+      for (var i = 0; i < observing.length; ++i) {
+        var o = observing[i]
+
+        if (!o.root.parentNode) { // removed from DOM
+          observing.splice(i--, 1) // remove
+          continue
+        }
+
+        for (var j = 0, len = o.handlers.length; j < o.handlers.length; ++j) {
+          var handler = o.handlers[j]
+          var hasChanged = !handler.model.eql(handler.before)
+          if (hasChanged) {
+            handler.before = handler.model.state()
+            o.callback()
+            break
+          }
+        }
+      }
+    }
+
+    requestAnimationFrame(animate)
+  })
+}
+
+function observe(root, handlers, callback) {
+  if (!handlers.length) {
+    return
+  }
+
+  observing.push({ root: root, handlers: handlers, callback: callback })
+  start()
+}
+
 module.exports = function bind(target, template, locals) {
   if(!target || target.nodeType !== Node.ELEMENT_NODE) {
     throw new TypeError('Target must be an element node')
@@ -47,7 +96,7 @@ module.exports = function bind(target, template, locals) {
 
   updateFn()
 
-  var handlers = locals.filter(function(local) {
+  var handlers = locals.toArray().filter(function(local) {
     return Model.isModel(local)
   }).map(function(local) {
     return {
@@ -56,29 +105,8 @@ module.exports = function bind(target, template, locals) {
     }
   })
 
-  if (handlers.size) {
-    requestAnimationFrame(function animate() {
-      if (!root.parentNode) { // removed from DOM
-        return
-      }
-
-      var changed = handlers.filter(function(handler) {
-        var hasChanged = !handler.model.eql(handler.before)
-        if (hasChanged) {
-          handler.before = handler.model.state()
-          return true
-        } else {
-          return false
-        }
-      })
-
-      if (changed.size > 0) {
-        updateFn()
-      }
-
-      requestAnimationFrame(animate)
-    })
-  }
+  observe(root, handlers, updateFn)
+  start()
 
   return updateFn
 }
