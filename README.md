@@ -7,7 +7,7 @@ Declarative template data binding.
 
 Features:
 
-- Immutable Data
+- Immutable data
 - [Virtual DOM](https://github.com/Matt-Esch/virtual-dom)
 
 ## Usage

@@ -18,7 +18,6 @@
   },
   "homepage": "https://github.com/rkusa/ipoxy",
   "dependencies": {
-    "immutable": "^3.7",
     "virtual-dom": "rkusa/virtual-dom#ipoxy"
   },
   "devDependencies": {
