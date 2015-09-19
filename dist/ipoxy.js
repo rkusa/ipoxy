@@ -68,11 +68,15 @@ module.exports = function bind(target, template, locals) {
     template = undefined
   }
 
+  if (locals === undefined) {
+    locals = []
+  }
+
   if (typeof locals !== 'object') {
     throw new TypeError('locals must be an object or an array')
   }
 
-  locals = locals && (Array.isArray(locals) ? locals : [locals]) || {}
+  locals = Array.isArray(locals) ? locals : [locals]
 
   var update = prepare(target, template && template.content || target)
   var vdom   = new VNode(target.tagName, {}, [])
@@ -639,7 +643,7 @@ RepeatMixin.prototype.execute = function(content) {
       }
     }
 
-    var locals = self.locals
+    var locals = self.locals.slice()
     var alias = this.contents[0].alias
 
     if (alias) {
