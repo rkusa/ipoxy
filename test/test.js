@@ -2,6 +2,27 @@
 
 'use strict'
 
+ipoxy.createCursor = function(obj, path) {
+  path = path.slice()
+
+  while (path.length > 0 && obj && typeof obj === 'object') {
+    obj = obj[path.shift()]
+  }
+
+  return obj
+}
+
+function copyAndSet(obj, prop, val) {
+  var newObj = {}
+  for (var key in obj) {
+    newObj[key] = obj[key]
+  }
+
+  newObj[prop] = val
+
+  return newObj
+}
+
 describe('expression parser', function() {
   it('should parse identifiers', function() {
     var expr = '{{ foobar }}'
@@ -55,7 +76,7 @@ describe('expression parser', function() {
 describe('template', function() {
   var model
   function resetModel() {
-    model = ipoxy.fromJS({
+    model = {
       name:      'rkusa',
       isVisible: true,
       color:     'red',
@@ -63,7 +84,7 @@ describe('template', function() {
         { id: 1, isDone: true, task: 'this' },
         { id: 2, isDone: false, task: 'that' }
       ]
-    })
+    }
   }
   resetModel()
   afterEach(resetModel)
@@ -73,18 +94,18 @@ describe('template', function() {
       compile('text', model))
 
     it('should find expression inside an attribute node',
-      compile('attribute', model.get('tasks').get(0)))
+      compile('attribute', model.tasks[0]))
   })
 
   describe('boolean attributes', function() {
     it('should be true accordingly', function() {
-      var result = compile('boolattr', model.get('tasks').get(0))()
+      var result = compile('boolattr', model.tasks[0])()
       var checkbox = result.querySelector('input')
       expect(checkbox.checked).to.be.true
     })
 
     it('should be false accordingly', function() {
-      var result = compile('boolattr', model.get('tasks').get(1))()
+      var result = compile('boolattr', model.tasks[1])()
       var checkbox = result.querySelector('input')
       expect(checkbox.checked).to.be.false
     })
@@ -92,10 +113,10 @@ describe('template', function() {
 
   describe('if helper', function() {
     it('should be rendered if evaluated to true',
-      compile('iftrue', model.get('tasks').get(0)))
+      compile('iftrue', model.tasks[0]))
 
     it('should not be rendered if evaluated to false',
-      compile('iffalse', model.get('tasks').get(1)))
+      compile('iffalse', model.tasks[1]))
   })
 
   describe('repeat helper', function() {
@@ -106,12 +127,12 @@ describe('template', function() {
 
   describe('repeat and if helper combined', function() {
     it('should be rendered if evaluated to true', function() {
-      model = model.set('isVisible', true)
+      model.isVisible = true
       compile('repeattrue', model)()
     })
 
     it('should not be rendered if evaluated to false', function() {
-      model = model.set('isVisible', false)
+      model.isVisible = false
       compile('repeatfalse', model)()
     })
   })
@@ -125,7 +146,7 @@ describe('template', function() {
       var span = fragment.querySelector('span')
       expect(span.getAttribute('style')).to.equal('color: red')
 
-      model = model.set('color', 'blue')
+      model = copyAndSet(model, 'color', 'blue')
       setTimeout(function() {
         expect(span.getAttribute('style')).to.equal('color: blue')
         done()
@@ -133,7 +154,7 @@ describe('template', function() {
     })
 
     it('should work for boolean attributes (int)', function(done) {
-      var task     = model.get('tasks').get(0)
+      var task     = model.tasks[0]
       var fragment = bind('binding-boolean-attribute', ipoxy.model({
         get: function() {
           return task
@@ -143,7 +164,7 @@ describe('template', function() {
       var checkbox = fragment.querySelector('input')
       expect(checkbox.checked).to.be.true
 
-      task = task.set('isDone', false)
+      task = copyAndSet(task, 'isDone', false)
       setTimeout(function() {
         expect(checkbox.checked).to.be.false
         done()
@@ -151,7 +172,7 @@ describe('template', function() {
     })
 
     it('should work for boolean attributes (out)', function(done) {
-      var task     = model.get('tasks').get(0)
+      var task     = model.tasks[0]
       var fragment = bind('binding-boolean-attribute', ipoxy.model({
         get: function() {
           return task
@@ -170,22 +191,22 @@ describe('template', function() {
       checkbox.dispatchEvent(changeEvent)
 
       setTimeout(function() {
-        expect(task.get('isDone')).to.be.false
+        expect(task.isDone).to.be.false
         done()
       })
     })
 
     it('should work for input values (in)', function(done) {
-      var task     = model.get('tasks').get(0)
+      var task     = model.tasks[0]
       var fragment = bind('binding-input-value', ipoxy.model({
         get: function() {
           return task
         }
       }))
-      var input    = fragment.querySelector('input')
+      var input = fragment.querySelector('input')
       expect(input.value).to.equal('this')
 
-      task = task.set('task', 'something')
+      task = copyAndSet(task, 'task', 'something')
       setTimeout(function() {
         expect(input.value).to.equal('something')
         done()
@@ -193,7 +214,7 @@ describe('template', function() {
     })
 
     it('should work for input values (out)', function(done) {
-      var task     = model.get('tasks').get(0)
+      var task     = model.tasks[0]
       var fragment = bind('binding-input-value', ipoxy.model({
         get: function() {
           return task
@@ -211,7 +232,7 @@ describe('template', function() {
       input.dispatchEvent(changeEvent)
 
       setTimeout(function() {
-        expect(task.get('task')).to.equal('something')
+        expect(task.task).to.equal('something')
         done()
       })
     })

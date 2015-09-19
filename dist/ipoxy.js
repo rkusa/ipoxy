@@ -33,7 +33,7 @@ function start() {
           continue
         }
 
-        for (var j = 0, len = o.handlers.length; j < o.handlers.length; ++j) {
+        for (var j = 0, len = o.handlers.length; j < len; ++j) {
           var handler = o.handlers[j]
           var hasChanged = !handler.model.eql(handler.before)
           if (hasChanged) {
@@ -68,11 +68,11 @@ module.exports = function bind(target, template, locals) {
     template = undefined
   }
 
-  if (typeof locals !== 'object' || !Array.isArray(locals)) {
+  if (typeof locals !== 'object') {
     throw new TypeError('locals must be an object or an array')
   }
 
-  locals = Array.isArray(locals) ? locals : [locals]
+  locals = locals && (Array.isArray(locals) ? locals : [locals]) || {}
 
   var update = prepare(target, template && template.content || target)
   var vdom   = new VNode(target.tagName, {}, [])
@@ -520,14 +520,22 @@ exports.alias = Model.alias
 
 Object.defineProperties(exports, {
   updateProperty: {
-    enumerable: true,
-    get: function() { return Model.updateProperty },
-    set: function(fn) { Model.updateProperty = fn }
+    get: function() {
+      return Model.updateProperty
+    },
+    set: function(fn) {
+      Model.updateProperty = fn
+    },
+    enumerable: true
   },
   createCursor: {
-    enumerable: true,
-    get: function() { return Model.createCursor },
-    set: function(fn) { Model.createCursor = fn }
+    get: function() {
+      return Model.createCursor
+    },
+    set: function(fn) {
+      Model.createCursor = fn
+    },
+    enumerable: true
   }
 })
 
@@ -700,7 +708,7 @@ Model.updateProperty = function(obj, prop, val) {
   return obj
 }
 
-Model.createCursor = function(obj, path, callback) {
+Model.createCursor = function(/*obj, path, callback*/) {
   throw new Error('No default implementation; a custom one must be provided')
 }
 
@@ -838,8 +846,7 @@ Expression.prototype.compile = function(locals, opts) {
   return ref
 }
 
-var Model  = require('../model')
-var updateHandler = new WeakMap()
+var Model = require('../model')
 
 var Path = exports.Path = function(path) {
   this.keys = path
@@ -2183,7 +2190,9 @@ function drainQueue() {
         currentQueue = queue;
         queue = [];
         while (++queueIndex < len) {
-            currentQueue[queueIndex].run();
+            if (currentQueue) {
+                currentQueue[queueIndex].run();
+            }
         }
         queueIndex = -1;
         len = queue.length;
@@ -2235,7 +2244,6 @@ process.binding = function (name) {
     throw new Error('process.binding is not supported');
 };
 
-// TODO(shtylman)
 process.cwd = function () { return '/' };
 process.chdir = function (dir) {
     throw new Error('process.chdir is not supported');
