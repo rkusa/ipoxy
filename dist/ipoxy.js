@@ -43,8 +43,6 @@ function start() {
         }
 
         if (hasChanged) {
-          console.log("changed", i)
-
           // reset changed state on all handlers of the current observer
           o.handlers.forEach(function(handler) {
             handler.before = handler.model.state()
