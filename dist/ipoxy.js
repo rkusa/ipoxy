@@ -33,14 +33,25 @@ function start() {
           continue
         }
 
+        var hasChanged = false
         for (var j = 0, len = o.handlers.length; j < len; ++j) {
           var handler = o.handlers[j]
-          var hasChanged = !handler.model.eql(handler.before)
+          hasChanged = !handler.model.eql(handler.before)
           if (hasChanged) {
-            handler.before = handler.model.state()
-            o.callback()
             break
           }
+        }
+
+        if (hasChanged) {
+          console.log("changed", i)
+
+          // reset changed state on all handlers of the current observer
+          o.handlers.forEach(function(handler) {
+            handler.before = handler.model.state()
+          })
+
+          // call update callback
+          o.callback()
         }
       }
     }
@@ -891,8 +902,8 @@ Path.prototype.compile = function(locals) {
         root = obj
       }
 
-      if (obj && typeof obj === 'object') {
-        obj = Model.createCursor(obj, prop && [prop] || [], function(newData) {
+      if (obj && typeof obj === 'object' && prop) {
+        obj = Model.createCursor(obj, [prop], function(newData) {
           parent.set(newData)
         })
         continue
