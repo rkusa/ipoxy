@@ -44,9 +44,10 @@ function start() {
 
         if (hasChanged) {
           // reset changed state on all handlers of the current observer
-          o.handlers.forEach(function(handler) {
+          for (j = 0, len = o.handlers.length; j < len; ++j) {
+            handler = o.handlers[j]
             handler.before = handler.model.state()
-          })
+          }
 
           // call update callback
           o.callback()
