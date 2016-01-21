@@ -1,6 +1,8 @@
+# dotfiles
+.*
+!/.done.yml
+!/.npmignore
+!.gitignore
+
+# dependencies
 node_modules
-.DS_Store
-.coveralls.yml
-/test.js
-/test/coverage
-#/dist
