@@ -35,19 +35,6 @@ gulp.task('browserify', function() {
     .pipe(gulp.dest('./dist'))
 })
 
-var eslint = require('gulp-eslint')
-gulp.task('lint', function() {
-  return gulp.src([
-      '!lib/parser/parser.js',
-      'lib/**/*.js',
-      'test/**/*.js',
-      'gulpfile.js'
-    ])
-    .pipe(eslint())
-    .pipe(eslint.format('stylish'))
-    .pipe(eslint.failAfterError())
-})
-
 var spawn = require('child_process').spawn
 gulp.task('jison', function(done) {
   var jison = spawn(

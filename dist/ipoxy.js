@@ -1,16 +1,1455 @@
 (function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.ipoxy = f()}})(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
+(function (process){
+
+/**
+ * @license
+ * Copyright 2015 The Incremental DOM Authors. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS-IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+'use strict';
+
+/**
+ * Copyright 2015 The Incremental DOM Authors. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS-IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/**
+  * Keeps track whether or not we are in an attributes declaration (after
+  * elementOpenStart, but before elementOpenEnd).
+  * @type {boolean}
+  */
+var inAttributes = false;
+
+/**
+  * Keeps track whether or not we are in an element that should not have its
+  * children cleared.
+  * @type {boolean}
+  */
+var inSkip = false;
+
+/**
+ * Makes sure that there is a current patch context.
+ * @param {*} context
+ */
+var assertInPatch = function (context) {
+  if (!context) {
+    throw new Error('Cannot call currentElement() unless in patch');
+  }
+};
+
+/**
+* Makes sure that keyed Element matches the tag name provided.
+* @param {!string} nodeName The nodeName of the node that is being matched.
+* @param {string=} tag The tag name of the Element.
+* @param {?string=} key The key of the Element.
+*/
+var assertKeyedTagMatches = function (nodeName, tag, key) {
+  if (nodeName !== tag) {
+    throw new Error('Was expecting node with key "' + key + '" to be a ' + tag + ', not a ' + nodeName + '.');
+  }
+};
+
+/**
+ * Makes sure that a patch closes every node that it opened.
+ * @param {?Node} openElement
+ * @param {!Node|!DocumentFragment} root
+ */
+var assertNoUnclosedTags = function (openElement, root) {
+  if (openElement === root) {
+    return;
+  }
+
+  var currentElement = openElement;
+  var openTags = [];
+  while (currentElement && currentElement !== root) {
+    openTags.push(currentElement.nodeName.toLowerCase());
+    currentElement = currentElement.parentNode;
+  }
+
+  throw new Error('One or more tags were not closed:\n' + openTags.join('\n'));
+};
+
+/**
+ * Makes sure that the caller is not where attributes are expected.
+ * @param {string} functionName
+ */
+var assertNotInAttributes = function (functionName) {
+  if (inAttributes) {
+    throw new Error(functionName + '() may not be called between ' + 'elementOpenStart() and elementOpenEnd().');
+  }
+};
+
+/**
+ * Makes sure that the caller is not inside an element that has declared skip.
+ * @param {string} functionName
+ */
+var assertNotInSkip = function (functionName) {
+  if (inSkip) {
+    throw new Error(functionName + '() may not be called inside an element ' + 'that has called skip().');
+  }
+};
+
+/**
+ * Makes sure that the caller is where attributes are expected.
+ * @param {string} functionName
+ */
+var assertInAttributes = function (functionName) {
+  if (!inAttributes) {
+    throw new Error(functionName + '() must be called after ' + 'elementOpenStart().');
+  }
+};
+
+/**
+ * Makes sure the patch closes virtual attributes call
+ */
+var assertVirtualAttributesClosed = function () {
+  if (inAttributes) {
+    throw new Error('elementOpenEnd() must be called after calling ' + 'elementOpenStart().');
+  }
+};
+
+/**
+  * Makes sure that placeholders have a key specified. Otherwise, conditional
+  * placeholders and conditional elements next to placeholders will cause
+  * placeholder elements to be re-used as non-placeholders and vice versa.
+  * @param {string} key
+  */
+var assertPlaceholderKeySpecified = function (key) {
+  if (!key) {
+    throw new Error('Placeholder elements must have a key specified.');
+  }
+};
+
+/**
+  * Makes sure that tags are correctly nested.
+  * @param {string} nodeName
+  * @param {string} tag
+  */
+var assertCloseMatchesOpenTag = function (nodeName, tag) {
+  if (nodeName !== tag) {
+    throw new Error('Received a call to close ' + tag + ' but ' + nodeName + ' was open.');
+  }
+};
+
+/**
+ * Makes sure that no children elements have been declared yet in the current
+ * element.
+ * @param {string} functionName
+ * @param {?Node} previousNode
+ */
+var assertNoChildrenDeclaredYet = function (functionName, previousNode) {
+  if (previousNode !== null) {
+    throw new Error(functionName + '() must come before any child ' + 'declarations inside the current element.');
+  }
+};
+
+/**
+ * Checks that a call to patchElement actually patched the element.
+ * @param {?Node} node The node requested to be patched.
+ * @param {?Node} currentNode The currentNode after the patch.
+ */
+var assertPatchElementNotEmpty = function (node, currentNode) {
+  if (node === currentNode) {
+    throw new Error('There must be exactly one top level call corresponding ' + 'to the patched element.');
+  }
+};
+
+/**
+ * Checks that a call to patchElement actually patched the element.
+ * @param {?Node} node The node requested to be patched.
+ * @param {?Node} previousNode The previousNode after the patch.
+ */
+var assertPatchElementNoExtras = function (node, previousNode) {
+  if (node !== previousNode) {
+    throw new Error('There must be exactly one top level call corresponding ' + 'to the patched element.');
+  }
+};
+
+/**
+ * Updates the state of being in an attribute declaration.
+ * @param {boolean} value
+ * @return {boolean} the previous value.
+ */
+var setInAttributes = function (value) {
+  var previous = inAttributes;
+  inAttributes = value;
+  return previous;
+};
+
+/**
+ * Updates the state of being in a skip element.
+ * @param {boolean} value
+ * @return {boolean} the previous value.
+ */
+var setInSkip = function (value) {
+  var previous = inSkip;
+  inSkip = value;
+  return previous;
+};
+
+/**
+ * Copyright 2015 The Incremental DOM Authors. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS-IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/** */
+exports.notifications = {
+  /**
+   * Called after patch has compleated with any Nodes that have been created
+   * and added to the DOM.
+   * @type {?function(Array<!Node>)}
+   */
+  nodesCreated: null,
+
+  /**
+   * Called after patch has compleated with any Nodes that have been removed
+   * from the DOM.
+   * Note it's an applications responsibility to handle any childNodes.
+   * @type {?function(Array<!Node>)}
+   */
+  nodesDeleted: null
+};
+
+/**
+ * Keeps track of the state of a patch.
+ * @constructor
+ */
+function Context() {
+  /**
+   * @type {(Array<!Node>|undefined)}
+   */
+  this.created = exports.notifications.nodesCreated && [];
+
+  /**
+   * @type {(Array<!Node>|undefined)}
+   */
+  this.deleted = exports.notifications.nodesDeleted && [];
+}
+
+/**
+ * @param {!Node} node
+ */
+Context.prototype.markCreated = function (node) {
+  if (this.created) {
+    this.created.push(node);
+  }
+};
+
+/**
+ * @param {!Node} node
+ */
+Context.prototype.markDeleted = function (node) {
+  if (this.deleted) {
+    this.deleted.push(node);
+  }
+};
+
+/**
+ * Notifies about nodes that were created during the patch opearation.
+ */
+Context.prototype.notifyChanges = function () {
+  if (this.created && this.created.length > 0) {
+    exports.notifications.nodesCreated(this.created);
+  }
+
+  if (this.deleted && this.deleted.length > 0) {
+    exports.notifications.nodesDeleted(this.deleted);
+  }
+};
+
+/**
+ * Copyright 2015 The Incremental DOM Authors. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS-IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/**
+ * A cached reference to the hasOwnProperty function.
+ */
+var hasOwnProperty = Object.prototype.hasOwnProperty;
+
+/**
+ * A cached reference to the create function.
+ */
+var create = Object.create;
+
+/**
+ * Used to prevent property collisions between our "map" and its prototype.
+ * @param {!Object<string, *>} map The map to check.
+ * @param {string} property The property to check.
+ * @return {boolean} Whether map has property.
+ */
+var has = function (map, property) {
+  return hasOwnProperty.call(map, property);
+};
+
+/**
+ * Creates an map object without a prototype.
+ * @return {!Object}
+ */
+var createMap = function () {
+  return create(null);
+};
+
+/**
+ * Keeps track of information needed to perform diffs for a given DOM node.
+ * @param {!string} nodeName
+ * @param {?string=} key
+ * @constructor
+ */
+function NodeData(nodeName, key) {
+  /**
+   * The attributes and their values.
+   * @const {!Object<string, *>}
+   */
+  this.attrs = createMap();
+
+  /**
+   * An array of attribute name/value pairs, used for quickly diffing the
+   * incomming attributes to see if the DOM node's attributes need to be
+   * updated.
+   * @const {Array<*>}
+   */
+  this.attrsArr = [];
+
+  /**
+   * The incoming attributes for this Node, before they are updated.
+   * @const {!Object<string, *>}
+   */
+  this.newAttrs = createMap();
+
+  /**
+   * The key used to identify this node, used to preserve DOM nodes when they
+   * move within their parent.
+   * @const
+   */
+  this.key = key;
+
+  /**
+   * Keeps track of children within this node by their key.
+   * {?Object<string, !Element>}
+   */
+  this.keyMap = null;
+
+  /**
+   * Whether or not the keyMap is currently valid.
+   * {boolean}
+   */
+  this.keyMapValid = true;
+
+  /**
+   * The node name for this node.
+   * @const {string}
+   */
+  this.nodeName = nodeName;
+
+  /**
+   * @type {?string}
+   */
+  this.text = null;
+}
+
+/**
+ * Initializes a NodeData object for a Node.
+ *
+ * @param {Node} node The node to initialize data for.
+ * @param {string} nodeName The node name of node.
+ * @param {?string=} key The key that identifies the node.
+ * @return {!NodeData} The newly initialized data object
+ */
+var initData = function (node, nodeName, key) {
+  var data = new NodeData(nodeName, key);
+  node['__incrementalDOMData'] = data;
+  return data;
+};
+
+/**
+ * Retrieves the NodeData object for a Node, creating it if necessary.
+ *
+ * @param {Node} node The node to retrieve the data for.
+ * @return {!NodeData} The NodeData for this Node.
+ */
+var getData = function (node) {
+  var data = node['__incrementalDOMData'];
+
+  if (!data) {
+    var nodeName = node.nodeName.toLowerCase();
+    var key = null;
+
+    if (node instanceof Element) {
+      key = node.getAttribute('key');
+    }
+
+    data = initData(node, nodeName, key);
+  }
+
+  return data;
+};
+
+/**
+ * Copyright 2015 The Incremental DOM Authors. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS-IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+exports.symbols = {
+  default: '__default',
+
+  placeholder: '__placeholder'
+};
+
+/**
+ * Applies an attribute or property to a given Element. If the value is null
+ * or undefined, it is removed from the Element. Otherwise, the value is set
+ * as an attribute.
+ * @param {!Element} el
+ * @param {string} name The attribute's name.
+ * @param {?(boolean|number|string)=} value The attribute's value.
+ */
+exports.applyAttr = function (el, name, value) {
+  if (value == null) {
+    el.removeAttribute(name);
+  } else {
+    el.setAttribute(name, value);
+  }
+};
+
+/**
+ * Applies a property to a given Element.
+ * @param {!Element} el
+ * @param {string} name The property's name.
+ * @param {*} value The property's value.
+ */
+exports.applyProp = function (el, name, value) {
+  el[name] = value;
+};
+
+/**
+ * Applies a style to an Element. No vendor prefix expansion is done for
+ * property names/values.
+ * @param {!Element} el
+ * @param {string} name The attribute's name.
+ * @param {*} style The style to set. Either a string of css or an object
+ *     containing property-value pairs.
+ */
+var applyStyle = function (el, name, style) {
+  if (typeof style === 'string') {
+    el.style.cssText = style;
+  } else {
+    el.style.cssText = '';
+    var elStyle = el.style;
+    var obj = /** @type {!Object<string,string>} */style;
+
+    for (var prop in obj) {
+      if (has(obj, prop)) {
+        elStyle[prop] = obj[prop];
+      }
+    }
+  }
+};
+
+/**
+ * Updates a single attribute on an Element.
+ * @param {!Element} el
+ * @param {string} name The attribute's name.
+ * @param {*} value The attribute's value. If the value is an object or
+ *     function it is set on the Element, otherwise, it is set as an HTML
+ *     attribute.
+ */
+var applyAttributeTyped = function (el, name, value) {
+  var type = typeof value;
+
+  if (type === 'object' || type === 'function') {
+    exports.applyProp(el, name, value);
+  } else {
+    exports.applyAttr(el, name, /** @type {?(boolean|number|string)} */value);
+  }
+};
+
+/**
+ * Calls the appropriate attribute mutator for this attribute.
+ * @param {!Element} el
+ * @param {string} name The attribute's name.
+ * @param {*} value The attribute's value.
+ */
+var updateAttribute = function (el, name, value) {
+  var data = getData(el);
+  var attrs = data.attrs;
+
+  if (attrs[name] === value) {
+    return;
+  }
+
+  var mutator = exports.attributes[name] || exports.attributes[exports.symbols.default];
+  mutator(el, name, value);
+
+  attrs[name] = value;
+};
+
+/**
+ * A publicly mutable object to provide custom mutators for attributes.
+ * @const {!Object<string, function(!Element, string, *)>}
+ */
+exports.attributes = createMap();
+
+// Special generic mutator that's called for any attribute that does not
+// have a specific mutator.
+exports.attributes[exports.symbols.default] = applyAttributeTyped;
+
+exports.attributes[exports.symbols.placeholder] = function () {};
+
+exports.attributes['style'] = applyStyle;
+
+/**
+ * Gets the namespace to create an element (of a given tag) in.
+ * @param {string} tag The tag to get the namespace for.
+ * @param {?Node} parent
+ * @return {?string} The namespace to create the tag in.
+ */
+var getNamespaceForTag = function (tag, parent) {
+  if (tag === 'svg') {
+    return 'http://www.w3.org/2000/svg';
+  }
+
+  if (getData(parent).nodeName === 'foreignObject') {
+    return null;
+  }
+
+  return parent.namespaceURI;
+};
+
+/**
+ * Creates an Element.
+ * @param {Document} doc The document with which to create the Element.
+ * @param {?Node} parent
+ * @param {string} tag The tag for the Element.
+ * @param {?string=} key A key to identify the Element.
+ * @param {?Array<*>=} statics An array of attribute name/value pairs of the
+ *     static attributes for the Element.
+ * @return {!Element}
+ */
+var createElement = function (doc, parent, tag, key, statics) {
+  var namespace = getNamespaceForTag(tag, parent);
+  var is = statics && statics[0] === 'is' && statics[1];
+  var el;
+
+  if (is) {
+    if (namespace) {
+      el = doc.createElementNS(namespace, tag, is);
+    } else {
+      el = doc.createElement(tag, is);
+    }
+  } else {
+    if (namespace) {
+      el = doc.createElementNS(namespace, tag);
+    } else {
+      el = doc.createElement(tag);
+    }
+  }
+
+  initData(el, tag, key);
+
+  if (statics) {
+    for (var i = 0; i < statics.length; i += 2) {
+      updateAttribute(el, /** @type {!string}*/statics[i], statics[i + 1]);
+    }
+  }
+
+  return el;
+};
+
+/**
+ * Creates a Text Node.
+ * @param {Document} doc The document with which to create the Element.
+ * @return {!Text}
+ */
+var createText = function (doc) {
+  var node = doc.createTextNode('');
+  initData(node, '#text', null);
+  return node;
+};
+
+/**
+ * Creates a mapping that can be used to look up children using a key.
+ * @param {?Node} el
+ * @return {!Object<string, !Element>} A mapping of keys to the children of the
+ *     Element.
+ */
+var createKeyMap = function (el) {
+  var map = createMap();
+  var children = el.children;
+  var count = children.length;
+
+  for (var i = 0; i < count; i += 1) {
+    var child = children[i];
+    var key = getData(child).key;
+
+    if (key) {
+      map[key] = child;
+    }
+  }
+
+  return map;
+};
+
+/**
+ * Retrieves the mapping of key to child node for a given Element, creating it
+ * if necessary.
+ * @param {?Node} el
+ * @return {!Object<string, !Node>} A mapping of keys to child Elements
+ */
+var getKeyMap = function (el) {
+  var data = getData(el);
+
+  if (!data.keyMap) {
+    data.keyMap = createKeyMap(el);
+  }
+
+  return data.keyMap;
+};
+
+/**
+ * Retrieves a child from the parent with the given key.
+ * @param {?Node} parent
+ * @param {?string=} key
+ * @return {?Node} The child corresponding to the key.
+ */
+var getChild = function (parent, key) {
+  return key ? getKeyMap(parent)[key] : null;
+};
+
+/**
+ * Registers an element as being a child. The parent will keep track of the
+ * child using the key. The child can be retrieved using the same key using
+ * getKeyMap. The provided key should be unique within the parent Element.
+ * @param {?Node} parent The parent of child.
+ * @param {string} key A key to identify the child with.
+ * @param {!Node} child The child to register.
+ */
+var registerChild = function (parent, key, child) {
+  getKeyMap(parent)[key] = child;
+};
+
+/** @type {?Context} */
+var context = null;
+
+/** @type {?Node} */
+var currentNode;
+
+/** @type {?Node} */
+var currentParent;
+
+/** @type {?Node} */
+var previousNode;
+
+/** @type {?Element|?DocumentFragment} */
+var root;
+
+/** @type {?Document} */
+var doc;
+
+/**
+ * Sets up and restores a patch context, running the patch function with the
+ * provided data.
+ * @param {!Element|!DocumentFragment} node The Element or Document
+ *     where the patch should start.
+ * @param {!function(T)} fn The patching function.
+ * @param {T=} data An argument passed to fn.
+ * @template T
+ */
+var runPatch = function (node, fn, data) {
+  var prevContext = context;
+  var prevRoot = root;
+  var prevDoc = doc;
+  var prevCurrentNode = currentNode;
+  var prevCurrentParent = currentParent;
+  var prevPreviousNode = previousNode;
+  var previousInAttributes = false;
+  var previousInSkip = false;
+
+  context = new Context();
+  root = node;
+  doc = node.ownerDocument;
+  currentNode = node;
+  currentParent = node.parentNode;
+  previousNode = null;
+
+  if (process.env.NODE_ENV !== 'production') {
+    previousInAttributes = setInAttributes(false);
+    previousInSkip = setInSkip(false);
+  }
+
+  fn(data);
+
+  if (process.env.NODE_ENV !== 'production') {
+    assertVirtualAttributesClosed();
+    setInAttributes(previousInAttributes);
+    setInSkip(previousInSkip);
+  }
+
+  context.notifyChanges();
+
+  context = prevContext;
+  root = prevRoot;
+  doc = prevDoc;
+  currentNode = prevCurrentNode;
+  currentParent = prevCurrentParent;
+  previousNode = prevPreviousNode;
+};
+
+/**
+ * Patches the document starting at node with the provided function. This
+ * function may be called during an existing patch operation.
+ * @param {!Element|!DocumentFragment} node The Element or Document
+ *     to patch.
+ * @param {!function(T)} fn A function containing elementOpen/elementClose/etc.
+ *     calls that describe the DOM.
+ * @param {T=} data An argument passed to fn to represent DOM state.
+ * @template T
+ */
+exports.patch = function (node, fn, data) {
+  runPatch(node, function (data) {
+    enterNode();
+    fn(data);
+    exitNode();
+
+    if (process.env.NODE_ENV !== 'production') {
+      assertNoUnclosedTags(previousNode, node);
+    }
+  }, data);
+};
+
+/**
+ * Patches an Element with the the provided function. Exactly one top level
+ * element call should be made corresponding to `node`.
+ * @param {!Element} node The Element where the patch should start.
+ * @param {!function(T)} fn A function containing elementOpen/elementClose/etc.
+ *     calls that describe the DOM. This should have at most one top level
+ *     element call.
+ * @param {T=} data An argument passed to fn to represent DOM state.
+ * @template T
+ */
+exports.patchElement = function (node, fn, data) {
+  runPatch(node, function (data) {
+    fn(data);
+
+    if (process.env.NODE_ENV !== 'production') {
+      assertPatchElementNotEmpty(node, currentNode);
+      assertPatchElementNoExtras(node, previousNode);
+    }
+  }, data);
+};
+
+/**
+ * Checks whether or not the current node matches the specified nodeName and
+ * key.
+ *
+ * @param {?string} nodeName The nodeName for this node.
+ * @param {?string=} key An optional key that identifies a node.
+ * @return {boolean} True if the node matches, false otherwise.
+ */
+var matches = function (nodeName, key) {
+  var data = getData(currentNode);
+
+  // Key check is done using double equals as we want to treat a null key the
+  // same as undefined. This should be okay as the only values allowed are
+  // strings, null and undefined so the == semantics are not too weird.
+  return nodeName === data.nodeName && key == data.key;
+};
+
+/**
+ * Aligns the virtual Element definition with the actual DOM, moving the
+ * corresponding DOM node to the correct location or creating it if necessary.
+ * @param {string} nodeName For an Element, this should be a valid tag string.
+ *     For a Text, this should be #text.
+ * @param {?string=} key The key used to identify this element.
+ * @param {?Array<*>=} statics For an Element, this should be an array of
+ *     name-value pairs.
+ */
+var alignWithDOM = function (nodeName, key, statics) {
+  if (currentNode && matches(nodeName, key)) {
+    return;
+  }
+
+  var node;
+
+  // Check to see if the node has moved within the parent.
+  if (key) {
+    node = getChild(currentParent, key);
+    if (node && process.env.NODE_ENV !== 'production') {
+      assertKeyedTagMatches(getData(node).nodeName, nodeName, key);
+    }
+  }
+
+  // Create the node if it doesn't exist.
+  if (!node) {
+    if (nodeName === '#text') {
+      node = createText(doc);
+    } else {
+      node = createElement(doc, currentParent, nodeName, key, statics);
+    }
+
+    if (key) {
+      registerChild(currentParent, key, node);
+    }
+
+    context.markCreated(node);
+  }
+
+  // If the node has a key, remove it from the DOM to prevent a large number
+  // of re-orders in the case that it moved far or was completely removed.
+  // Since we hold on to a reference through the keyMap, we can always add it
+  // back.
+  if (currentNode && getData(currentNode).key) {
+    currentParent.replaceChild(node, currentNode);
+    getData(currentParent).keyMapValid = false;
+  } else {
+    currentParent.insertBefore(node, currentNode);
+  }
+
+  currentNode = node;
+};
+
+/**
+ * Clears out any unvisited Nodes, as the corresponding virtual element
+ * functions were never called for them.
+ */
+var clearUnvisitedDOM = function () {
+  var node = currentParent;
+  var data = getData(node);
+  var keyMap = data.keyMap;
+  var keyMapValid = data.keyMapValid;
+  var child = node.lastChild;
+  var key;
+
+  if (child === previousNode && keyMapValid) {
+    return;
+  }
+
+  if (data.attrs[exports.symbols.placeholder] && node !== root) {
+    return;
+  }
+
+  while (child !== previousNode) {
+    node.removeChild(child);
+    context.markDeleted( /** @type {!Node}*/child);
+
+    key = getData(child).key;
+    if (key) {
+      delete keyMap[key];
+    }
+    child = node.lastChild;
+  }
+
+  // Clean the keyMap, removing any unusued keys.
+  if (!keyMapValid) {
+    for (key in keyMap) {
+      child = keyMap[key];
+      if (child.parentNode !== node) {
+        context.markDeleted(child);
+        delete keyMap[key];
+      }
+    }
+
+    data.keyMapValid = true;
+  }
+};
+
+/**
+ * Changes to the first child of the current node.
+ */
+var enterNode = function () {
+  currentParent = currentNode;
+  currentNode = currentNode.firstChild;
+  previousNode = null;
+};
+
+/**
+ * Changes to the next sibling of the current node.
+ */
+var nextNode = function () {
+  previousNode = currentNode;
+  currentNode = currentNode.nextSibling;
+};
+
+/**
+ * Changes to the parent of the current node, removing any unvisited children.
+ */
+var exitNode = function () {
+  clearUnvisitedDOM();
+
+  previousNode = currentParent;
+  currentNode = currentParent.nextSibling;
+  currentParent = currentParent.parentNode;
+};
+
+/**
+ * Makes sure that the current node is an Element with a matching tagName and
+ * key.
+ *
+ * @param {string} tag The element's tag.
+ * @param {?string=} key The key used to identify this element. This can be an
+ *     empty string, but performance may be better if a unique value is used
+ *     when iterating over an array of items.
+ * @param {?Array<*>=} statics An array of attribute name/value pairs of the
+ *     static attributes for the Element. These will only be set once when the
+ *     Element is created.
+ * @return {!Element} The corresponding Element.
+ */
+var _elementOpen = function (tag, key, statics) {
+  alignWithDOM(tag, key, statics);
+  enterNode();
+  return (/** @type {!Element} */currentParent
+  );
+};
+
+/**
+ * Closes the currently open Element, removing any unvisited children if
+ * necessary.
+ *
+ * @return {!Element} The corresponding Element.
+ */
+var _elementClose = function () {
+  if (process.env.NODE_ENV !== 'production') {
+    setInSkip(false);
+  }
+
+  exitNode();
+  return (/** @type {!Element} */previousNode
+  );
+};
+
+/**
+ * Makes sure the current node is a Text node and creates a Text node if it is
+ * not.
+ *
+ * @return {!Text} The corresponding Text Node.
+ */
+var _text = function () {
+  alignWithDOM('#text', null, null);
+  nextNode();
+  return (/** @type {!Text} */previousNode
+  );
+};
+
+/**
+ * Gets the current Element being patched.
+ * @return {!Element}
+ */
+exports.currentElement = function () {
+  if (process.env.NODE_ENV !== 'production') {
+    assertInPatch(context);
+    assertNotInAttributes('currentElement');
+  }
+  return (/** @type {!Element} */currentParent
+  );
+};
+
+/**
+ * Skips the children in a subtree, allowing an Element to be closed without
+ * clearing out the children.
+ */
+exports.skip = function () {
+  if (process.env.NODE_ENV !== 'production') {
+    assertNoChildrenDeclaredYet('skip', previousNode);
+    setInSkip(true);
+  }
+  previousNode = currentParent.lastChild;
+};
+
+/**
+ * The offset in the virtual element declaration where the attributes are
+ * specified.
+ * @const
+ */
+var ATTRIBUTES_OFFSET = 3;
+
+/**
+ * Builds an array of arguments for use with elementOpenStart, attr and
+ * elementOpenEnd.
+ * @const {Array<*>}
+ */
+var argsBuilder = [];
+
+/**
+ * @param {string} tag The element's tag.
+ * @param {?string=} key The key used to identify this element. This can be an
+ *     empty string, but performance may be better if a unique value is used
+ *     when iterating over an array of items.
+ * @param {?Array<*>=} statics An array of attribute name/value pairs of the
+ *     static attributes for the Element. These will only be set once when the
+ *     Element is created.
+ * @param {...*} var_args Attribute name/value pairs of the dynamic attributes
+ *     for the Element.
+ * @return {!Element} The corresponding Element.
+ */
+exports.elementOpen = function (tag, key, statics, var_args) {
+  if (process.env.NODE_ENV !== 'production') {
+    assertNotInAttributes('elementOpen');
+    assertNotInSkip('elementOpen');
+  }
+
+  var node = _elementOpen(tag, key, statics);
+  var data = getData(node);
+
+  /*
+   * Checks to see if one or more attributes have changed for a given Element.
+   * When no attributes have changed, this is much faster than checking each
+   * individual argument. When attributes have changed, the overhead of this is
+   * minimal.
+   */
+  var attrsArr = data.attrsArr;
+  var newAttrs = data.newAttrs;
+  var attrsChanged = false;
+  var i = ATTRIBUTES_OFFSET;
+  var j = 0;
+
+  for (; i < arguments.length; i += 1, j += 1) {
+    if (attrsArr[j] !== arguments[i]) {
+      attrsChanged = true;
+      break;
+    }
+  }
+
+  for (; i < arguments.length; i += 1, j += 1) {
+    attrsArr[j] = arguments[i];
+  }
+
+  if (j < attrsArr.length) {
+    attrsChanged = true;
+    attrsArr.length = j;
+  }
+
+  /*
+   * Actually perform the attribute update.
+   */
+  if (attrsChanged) {
+    for (i = ATTRIBUTES_OFFSET; i < arguments.length; i += 2) {
+      newAttrs[arguments[i]] = arguments[i + 1];
+    }
+
+    for (var attr in newAttrs) {
+      updateAttribute(node, attr, newAttrs[attr]);
+      newAttrs[attr] = undefined;
+    }
+  }
+
+  return node;
+};
+
+/**
+ * Declares a virtual Element at the current location in the document. This
+ * corresponds to an opening tag and a elementClose tag is required. This is
+ * like elementOpen, but the attributes are defined using the attr function
+ * rather than being passed as arguments. Must be folllowed by 0 or more calls
+ * to attr, then a call to elementOpenEnd.
+ * @param {string} tag The element's tag.
+ * @param {?string=} key The key used to identify this element. This can be an
+ *     empty string, but performance may be better if a unique value is used
+ *     when iterating over an array of items.
+ * @param {?Array<*>=} statics An array of attribute name/value pairs of the
+ *     static attributes for the Element. These will only be set once when the
+ *     Element is created.
+ */
+exports.elementOpenStart = function (tag, key, statics) {
+  if (process.env.NODE_ENV !== 'production') {
+    assertNotInAttributes('elementOpenStart');
+    setInAttributes(true);
+  }
+
+  argsBuilder[0] = tag;
+  argsBuilder[1] = key;
+  argsBuilder[2] = statics;
+};
+
+/***
+ * Defines a virtual attribute at this point of the DOM. This is only valid
+ * when called between elementOpenStart and elementOpenEnd.
+ *
+ * @param {string} name
+ * @param {*} value
+ */
+exports.attr = function (name, value) {
+  if (process.env.NODE_ENV !== 'production') {
+    assertInAttributes('attr');
+  }
+
+  argsBuilder.push(name, value);
+};
+
+/**
+ * Closes an open tag started with elementOpenStart.
+ * @return {!Element} The corresponding Element.
+ */
+exports.elementOpenEnd = function () {
+  if (process.env.NODE_ENV !== 'production') {
+    assertInAttributes('elementOpenEnd');
+    setInAttributes(false);
+  }
+
+  var node = exports.elementOpen.apply(null, argsBuilder);
+  argsBuilder.length = 0;
+  return node;
+};
+
+/**
+ * Closes an open virtual Element.
+ *
+ * @param {string} tag The element's tag.
+ * @return {!Element} The corresponding Element.
+ */
+exports.elementClose = function (tag) {
+  if (process.env.NODE_ENV !== 'production') {
+    assertNotInAttributes('elementClose');
+  }
+
+  var node = _elementClose();
+
+  if (process.env.NODE_ENV !== 'production') {
+    assertCloseMatchesOpenTag(getData(node).nodeName, tag);
+  }
+
+  return node;
+};
+
+/**
+ * Declares a virtual Element at the current location in the document that has
+ * no children.
+ * @param {string} tag The element's tag.
+ * @param {?string=} key The key used to identify this element. This can be an
+ *     empty string, but performance may be better if a unique value is used
+ *     when iterating over an array of items.
+ * @param {?Array<*>=} statics An array of attribute name/value pairs of the
+ *     static attributes for the Element. These will only be set once when the
+ *     Element is created.
+ * @param {...*} var_args Attribute name/value pairs of the dynamic attributes
+ *     for the Element.
+ * @return {!Element} The corresponding Element.
+ */
+exports.elementVoid = function (tag, key, statics, var_args) {
+  var node = exports.elementOpen.apply(null, arguments);
+  exports.elementClose.apply(null, arguments);
+  return node;
+};
+
+/**
+ * Declares a virtual Element at the current location in the document that is a
+ * placeholder element. Children of this Element can be manually managed and
+ * will not be cleared by the library.
+ *
+ * A key must be specified to make sure that this node is correctly preserved
+ * across all conditionals.
+ *
+ * @param {string} tag The element's tag.
+ * @param {string} key The key used to identify this element.
+ * @param {?Array<*>=} statics An array of attribute name/value pairs of the
+ *     static attributes for the Element. These will only be set once when the
+ *     Element is created.
+ * @param {...*} var_args Attribute name/value pairs of the dynamic attributes
+ *     for the Element.
+ * @return {!Element} The corresponding Element.
+ */
+exports.elementPlaceholder = function (tag, key, statics, var_args) {
+  if (process.env.NODE_ENV !== 'production') {
+    assertPlaceholderKeySpecified(key);
+  }
+
+  exports.elementOpen.apply(null, arguments);
+  exports.skip();
+  return exports.elementClose.apply(null, arguments);
+};
+
+/**
+ * Declares a virtual Text at this point in the document.
+ *
+ * @param {string|number|boolean} value The value of the Text.
+ * @param {...(function((string|number|boolean)):string)} var_args
+ *     Functions to format the value which are called only when the value has
+ *     changed.
+ * @return {!Text} The corresponding text node.
+ */
+exports.text = function (value, var_args) {
+  if (process.env.NODE_ENV !== 'production') {
+    assertNotInAttributes('text');
+    assertNotInSkip('text');
+  }
+
+  var node = _text();
+  var data = getData(node);
+
+  if (data.text !== value) {
+    data.text = /** @type {string} */value;
+
+    var formatted = value;
+    for (var i = 1; i < arguments.length; i += 1) {
+      formatted = arguments[i](formatted);
+    }
+
+    node.data = formatted;
+  }
+
+  return node;
+};
+
+}).call(this,require('_process'))
+},{"_process":21}],2:[function(require,module,exports){
 'use strict'
 
-var Model      = require('./model')
-var isTemplate = require('./utils').isTemplate
+const BaseNode = require('../node/base')
 
-var VNode = require('virtual-dom/vnode/vnode')
-var VText = require('virtual-dom/vnode/vtext')
-var diff  = require('virtual-dom/diff')
-var patch = require('virtual-dom/patch')
+module.exports = class Attribute extends BaseNode {
+  constructor(template, node, attr) {
+    super(template)
 
-var started = false
-var observing = []
+    this.node = node
+    this.attr = attr
+  }
+
+  statics() {
+    return []
+  }
+
+  render() {
+    const value = this.value !== undefined && this.value !== null ? String(this.value) : ''
+    if (value === '[object Object]') {
+      if (name in this.node) {
+        return [this.attr.name, '']
+      } else {
+        const reference = this.contents[0]
+        return [this.attr.name, reference]
+      }
+    }
+
+    return [this.attr.name, value || '']
+  }
+}
+
+
+},{"../node/base":13}],3:[function(require,module,exports){
+'use strict'
+
+const BaseNode = require('../node/base')
+const BOOLEAN = ['checked', 'selected', 'disabled']
+
+module.exports = class BooleanAttribute extends BaseNode {
+  constructor(template, node, attr) {
+    super(template)
+
+    this.node = node
+    this.attr = attr
+  }
+
+  statics() {
+    if (this.attr.name === 'checked') {
+      const self = this
+      const delegate = this.contents[0]
+
+      return ['onchange', function() {
+        switch (this.type) {
+          case 'checkbox':
+            delegate.set(this[self.attr.name])
+            break
+          case 'radio':
+            if (this.value === 'true' || this.value === 'false') {
+              delegate.set(this.value === 'true')
+            } else {
+              delegate.set(this.value)
+            }
+            break
+        }
+      }]
+    }
+  }
+
+  render() {
+    let val
+    if (this.node.type === 'radio' && this.attr.name === 'checked') {
+      val = String(this.value) === this.node.value
+    } else {
+      val = this.value ? true : false
+    }
+    if (val) {
+      return [this.attr.name, '']
+    } else {
+      return [this.attr.name, null]
+    }
+  }
+
+  static isBooleanAttribute(node, attr) {
+    return BOOLEAN.indexOf(attr.name) > -1
+  }
+}
+
+
+},{"../node/base":13}],4:[function(require,module,exports){
+'use strict'
+
+const BaseNode = require('../node/base')
+
+module.exports = class InputHool extends BaseNode {
+  constructor(template, node, attr) {
+    super(template)
+
+    this.node = node
+    this.attr = attr
+  }
+
+  statics() {
+    const self = this
+    return ['onchange', function() {
+      const val = self.set(this.value)
+      if (val !== this.value) {
+        this.value = val
+      }
+    }]
+  }
+
+  render() {
+    return [this.attr.name, this.value || '']
+  }
+
+  static isInputValue(node, attr) {
+    return (node instanceof HTMLInputElement || node instanceof HTMLSelectElement) && attr.name === 'value'
+  }
+}
+
+
+},{"../node/base":13}],5:[function(require,module,exports){
+'use strict'
+
+const Model      = require('./model')
+const isTemplate = require('./utils').isTemplate
+const importNode = require('./utils').importNode
+
+const parser     = require('./parser')
+const ast        = require('./parser/ast')
+
+const idom = require('incremental-dom')
+
+const applyAttributeTyped = idom.attributes[idom.symbols.default]
+
+idom.attributes[idom.symbols.default] = function(el, name, value) {
+  if (value && typeof value === 'object' && value instanceof ast.Reference) {
+    if (name in el) {
+      return
+    }
+
+    const reference = value
+    var getter = function() {
+      return reference.get()
+    }
+    getter.parent = reference.obj
+    getter.key    = reference.key
+    getter.alias  = reference.alias
+
+    Object.defineProperty(el, name, {
+      get: getter,
+      set: function(val) {
+        reference.set(val)
+      },
+      enumerable: true
+    })
+  } else {
+    applyAttributeTyped(el, name, value)
+  }
+}
+
+idom.attributes.checked = function(el, name, value) {
+  // idom.applyAttr(el, name, value)
+  el[name] = value !== null
+}
+
+idom.attributes.value = function(el, name, value) {
+  // <select value="{{ foobar }}"></select>
+  if (el.tagName === 'SELECT') {
+    // delay until select content has been created
+    setTimeout(function() {
+      // also update the selected html attribute, to make reset buttons work
+      // as expected
+      const selected = el.querySelectorAll('option[selected]')
+      for (let i = 0; i < selected.length; ++i) {
+        selected[i].removeAttribute('selected')
+        selected[i].selected = false
+      }
+
+      if (value !== undefined && value !== null) {
+        const option = el.querySelector('option[value="' + value + '"]')
+        if (option) {
+          option.setAttribute('selected', '')
+          option.selected = true
+        }
+      }
+    })
+  } else {
+    // idom.applyAttr(el, name, value)
+    idom.applyProp(el, name, value)
+  }
+}
+
+idom.attributes.content = function(el, name, value) {
+  if (isTemplate(el)) {
+    el.content.appendChild(value)
+  } else {
+    applyAttributeTyped(el, name, value)
+  }
+}
+
+let started = false
+const observing = []
 
 function start() {
   if (started) {
@@ -19,23 +1458,23 @@ function start() {
 
   started = true
 
-  var frameLength = 33 // this is ~1/30th of a second, in milliseconds (1000/30)
-  var lastFrame = 0
+  const frameLength = 33 // this is ~1/30th of a second, in milliseconds (1000/30)
+  let lastFrame = 0
   requestAnimationFrame(function animate(delta) {
     if(delta - lastFrame > frameLength) {
       lastFrame = delta
 
-      for (var i = 0; i < observing.length; ++i) {
-        var o = observing[i]
+      for (let i = 0; i < observing.length; ++i) {
+        const o = observing[i]
 
         if (!o.root.parentNode) { // removed from DOM
           observing.splice(i--, 1) // remove
           continue
         }
 
-        var hasChanged = false
-        for (var j = 0, len = o.handlers.length; j < len; ++j) {
-          var handler = o.handlers[j]
+        let hasChanged = false
+        for (let j = 0, len = o.handlers.length; j < len; ++j) {
+          const handler = o.handlers[j]
           hasChanged = !handler.model.eql(handler.before)
           if (hasChanged) {
             break
@@ -44,8 +1483,8 @@ function start() {
 
         if (hasChanged) {
           // reset changed state on all handlers of the current observer
-          for (j = 0, len = o.handlers.length; j < len; ++j) {
-            handler = o.handlers[j]
+          for (let j = 0, len = o.handlers.length; j < len; ++j) {
+            const handler = o.handlers[j]
             handler.before = handler.model.state()
           }
 
@@ -88,140 +1527,131 @@ module.exports = function bind(target, template, locals) {
 
   locals = Array.isArray(locals) ? locals : [locals]
 
-  var update = prepare(target, template && template.content || target)
-  var vdom   = new VNode(target.tagName, {}, [])
-  var root   = target //createElement(vdom)
   target.innerHTML = '' // clear
-  // target.parentNode.replaceChild(root, target)
+  // const root = target.cloneNode(false)
+  const root = target
+  if (template) {
+    root.appendChild(importNode(template.content, true))
+  }
 
-  var updateFn = function() {
-    var updated = update(locals)
-    // console.log('CHANGED', root, vdom, updated)
-    root = patch(root, diff(vdom, updated))
-    vdom = updated
+  const update = prepare(root)
+  const updateFn = function() {
+    idom.patchElement(target, update(locals))
   }
 
   updateFn()
 
-  var handlers = locals.filter(function(local) {
-    return Model.isModel(local)
-  }).map(function(local) {
-    return {
-      before: local.state(),
-      model:  local
-    }
+  const handlers = locals
+  .filter(local => Model.isModel(local))
+  .map(local => {
+    return { before: local.state(), model: local }
   })
 
-  observe(root, handlers, updateFn)
+  observe(target, handlers, updateFn)
   start()
 
   return updateFn
 }
 
-function prepare(target, root) {
-  var ctx = { nextId: 1 }
-  var children = prepareChildren(ctx, root)
-  var properties = prepareProperties(ctx, target)
+function prepare(root) {
+  const callbacks = visitElementNode(root)
+
   return function(locals) {
-    return new VNode(target.tagName, properties(locals), children(locals))
+    return function() {
+      callbacks.forEach(function(callback) {
+        callback(locals)
+      })
+    }
   }
 }
 
-function prepareChildren(ctx, node) {
-  var children = []
-  for (var child = node.firstChild; child; child = child.nextSibling) {
+function prepareChildren(node) {
+  const callbacks = []
+
+  for (let child = node.firstChild; child; child = child.nextSibling) {
     switch (child.nodeType) {
       case Node.ELEMENT_NODE:
-        children.push.apply(children, visitElementNode(ctx, child))
+        callbacks.push.apply(callbacks, visitElementNode(child))
         break
       case Node.TEXT_NODE:
-        children.push.apply(children, visitTextNode(ctx, child))
+        callbacks.push.apply(callbacks, visitTextNode(child))
         break
       default:
         continue
     }
   }
 
-  return function(locals, keySuffix) {
-    keySuffix = keySuffix || ''
-
-    var childs = []
-    children.forEach(function(fn) {
-      var vnodes = fn(locals, keySuffix)
-      if (Array.isArray(vnodes)) {
-        childs.push.apply(childs, vnodes)
-      } else {
-        childs.push(vnodes)
-      }
+  return function(locals, id) {
+    callbacks.forEach(function(fn) {
+      fn(locals, id)
     })
-    return childs
   }
 }
 
-function prepareProperties(ctx, node) {
-  var attributes = {}
-  var properties = {}
+const RepeatMixin       = require('./mixin/repeat')
+const IfMixin           = require('./mixin/if')
+const UnlessMixin       = require('./mixin/unless')
 
-  for (var i = 0, len = node.attributes.length; i < len; ++i) {
-    var attr = node.attributes[i]
-    var prop = visitAttributeNode(ctx, node, attr)
-    if (typeof prop === 'function') {
-      properties[attr.name] = prop
+const Attribute         = require('./attribute/attribute')
+const BooleanAttribute  = require('./attribute/boolean')
+const InputAttribute    = require('./attribute/input')
+
+const MIXINS = [IfMixin, UnlessMixin, RepeatMixin]
+
+function visitElementNode(node) {
+  // attributes
+  const statics = []
+  const attributes = []
+  for (let i = 0, len = node.attributes.length; i < len; ++i) {
+    const attr = node.attributes[i]
+    const template = parser.parse(attr.value)
+
+    if (!template.hasExpressions) {
+      statics.push(attr.name, attr.value)
     } else {
-      attributes[attr.name] = prop
+      let attribute
+
+      if (BooleanAttribute.isBooleanAttribute(node, attr)) {
+        attribute = new BooleanAttribute(template, node, attr)
+      } else if (InputAttribute.isInputValue(node, attr)) {
+        attribute = new InputAttribute(template, node, attr)
+      } else {
+        attribute = new Attribute(template, node, attr)
+      }
+
+      attributes.push(attribute)
     }
   }
 
-  var handler = function(locals) {
-    var props = { attributes: attributes }
-    for (var key in properties) {
-      props[key] = properties[key](locals)
-    }
-    return props
+  // <textarea>
+  const tagName = node.tagName.toLowerCase()
+  if (tagName === 'textarea') {
+    const attribute = new InputAttribute(parser.parse(node.value), node, { name: 'input' })
+    statics.push.apply(statics, attribute.statics())
+    attributes.push(attribute)
   }
-  handler.properties = properties
 
-  return handler
-}
-
-var parser = require('./parser')
-var ast    = require('./parser/ast')
-
-var TemplateWidget = require('./widget/template')
-var RepeatMixin = require('./mixin/repeat')
-var IfMixin = require('./mixin/if')
-var UnlessMixin = require('./mixin/unless')
-var InputHook = require('./hook/input')
-
-var MIXINS = [IfMixin, UnlessMixin, RepeatMixin]
-
-function visitElementNode(ctx, node) {
-  var tagName    = node.tagName
-  var properties = prepareProperties(ctx, node)
-  var namespace  = getNamespace(node)
-
-  var id = ctx.nextId++
-
+  // <template>
   if (isTemplate(node)) {
-    var head
+    let head
 
     MIXINS.forEach(function(Mixin) {
       if (!Mixin['is' + Mixin.name](node)) {
         return
       }
 
-      var template = parser.parse(node.getAttribute(Mixin.property) || '') || null
+      const template = parser.parse(node.getAttribute(Mixin.property) || '') || null
 
       if (!template.isSingleExpression) {
         throw new TypeError('Only one single expression allowd for mixins, '
                           + 'got: ' + template.source)
       }
 
-      var content = head || prepareChildren(ctx, node.content)
-
+      const content = head || prepareChildren(node.content)
       head = function(locals, keySuffix) {
-        var mixin = new Mixin(id + keySuffix, locals, template)
-        return mixin.execute(content) || []
+        const mixin = new Mixin(template, content)
+        mixin.update(locals)
+        return mixin.execute()
       }
     })
 
@@ -229,48 +1659,44 @@ function visitElementNode(ctx, node) {
       return [head]
     }
 
-    return [function(locals, keySuffix) {
-      keySuffix = keySuffix || ''
-      return new TemplateWidget(id + keySuffix, locals, node, properties)
-    }]
+    statics.push('content', node.content)
   }
 
-  var children = prepareChildren(ctx, node)
-
-  if (node.tagName === 'TEXTAREA') {
-    var inputId = ctx.nextId++
-    properties.properties['input-hook'] = function(locals, keySuffix) {
-      return new InputHook(inputId + keySuffix, locals, parser.parse(node.value))
-    }
-  }
-
-  return [function(locals, keySuffix) {
-    return new VNode(tagName, properties(locals), children(locals), id + keySuffix, namespace)
+  const children = prepareChildren(node)
+  return [function(locals, id) {
+    const args = [tagName, id || null, statics]
+    attributes.forEach(attr => {
+      attr.update(locals)
+      args[2].push.apply(args[2], attr.statics())
+      args.push.apply(args, attr.render())
+    })
+    idom.elementOpen.apply(idom, args)
+    children(locals)
+    idom.elementClose(tagName)
   }]
 }
 
-var TextWidget = require('./widget/text')
-var HTMLWidget = require('./widget/html')
+const TextNode = require('./node/text')
+const HTMLNode = require('./node/html')
 
-function visitTextNode(ctx, node) {
+function visitTextNode(node) {
   // ignore formatting
   if (node.nodeValue.match(/^\s+$/)) {
     return []
   }
 
-  var template = parser.parse(node.nodeValue)
+  const template = parser.parse(node.nodeValue)
 
   if (!template.hasExpressions) {
-    var vtext = new VText(node.nodeValue)
     return [function() {
-      return vtext
+      idom.text(node.nodeValue)
     }]
   }
 
   return template.body.map(function(child) {
     if (child instanceof ast.Expression) {
-      var isHTML = false
-      for (var i = 0, len = child.filters.length; i < len; ++i) {
+      let isHTML = false
+      for (let i = 0, len = child.filters.length; i < len; ++i) {
         if (child.filters[i].name === 'html') {
           isHTML = true
           child.filters.splice(i, 1)
@@ -278,63 +1704,26 @@ function visitTextNode(ctx, node) {
         }
       }
 
-      var id = ctx.nextId++
-
-      if (!isHTML) {
-        return function(locals) {
-          return new TextWidget(id, locals, child)
-        }
-      } else {
-        return function(locals) {
-          return new HTMLWidget(id, locals, child)
-        }
+      const widget = isHTML ? new HTMLNode(child)
+                          : new TextNode(child)
+      return function(locals) {
+        widget.update(locals)
+        widget.render()
       }
     } else {
-      var value = new VText(child.text || '')
       return function() {
-        return value
+        if (child.text) {
+          idom.text(child.text)
+        }
       }
     }
   })
 }
 
-// var RadioCheckedAttribute = require('./widget/attribute/radio')
-var BooleanAttributeHook = require('./hook/boolean')
-var AttributeHook = require('./hook/attribute')
 
-function visitAttributeNode(ctx, node, attr) {
-  var template = parser.parse(attr.value)
 
-  if (!template.hasExpressions) {
-    return attr.value
-  }
 
-  var id = ctx.nextId++
-
-  if (BooleanAttributeHook.isBooleanAttribute(node, attr)) {
-    return function(locals) {
-      return new BooleanAttributeHook(id, locals, template)
-    }
-  }
-
-  if ((node instanceof HTMLInputElement || node instanceof HTMLSelectElement) && attr.name === 'value') {
-    return function(locals) {
-      return new InputHook(id, locals, template)
-    }
-  }
-
-  return function(locals) {
-    return new AttributeHook(id, locals, template)
-  }
-}
-
-function getNamespace(el) {
-  return el.namespaceURI === 'http://www.w3.org/1999/xhtml'
-    ? null
-    : el.namespaceURI
-}
-
-},{"./hook/attribute":3,"./hook/boolean":5,"./hook/input":6,"./mixin/if":9,"./mixin/repeat":10,"./mixin/unless":11,"./model":12,"./parser":14,"./parser/ast":13,"./utils":16,"./widget/html":18,"./widget/template":19,"./widget/text":20,"virtual-dom/diff":27,"virtual-dom/patch":28,"virtual-dom/vnode/vnode":42,"virtual-dom/vnode/vtext":44}],2:[function(require,module,exports){
+},{"./attribute/attribute":2,"./attribute/boolean":3,"./attribute/input":4,"./mixin/if":9,"./mixin/repeat":10,"./mixin/unless":11,"./model":12,"./node/html":14,"./node/text":15,"./parser":17,"./parser/ast":16,"./utils":19,"incremental-dom":1}],6:[function(require,module,exports){
 'use strict'
 
 exports.filter = Object.create(null)
@@ -347,170 +1736,7 @@ exports.registerFilter('class', function(condition, name) {
   return condition ? name : ''
 })
 
-},{}],3:[function(require,module,exports){
-'use strict'
-
-var BaseHook = require('./base')
-
-var AttributeHook = module.exports = function() {
-  BaseHook.apply(this, arguments)
-}
-
-AttributeHook.prototype = Object.create(BaseHook.prototype, {
-  constructor: { value: AttributeHook }
-})
-
-AttributeHook.prototype.hook = function(node, name) {
-  var value = this.value !== undefined && this.value !== null ? String(this.value) : ''
-  if (value === '[object Object]') {
-    value = ''
-
-    if (!(name in node)) {
-      var reference = this.contents[0]
-      var getter = function() {
-        return reference.get()
-      }
-      getter.parent = reference.obj
-      getter.key    = reference.key
-      getter.alias  = reference.alias
-
-      Object.defineProperty(node, name, {
-        get: getter,
-        set: function(val) {
-          reference.set(val)
-        },
-        enumerable: true
-      })
-    }
-  }
-
-  node.setAttribute(name, value || '')
-}
-
-},{"./base":4}],4:[function(require,module,exports){
-'use strict'
-
-var BaseWidget = require('../widget/base')
-
-var BaseHook = module.exports = function() {
-  BaseWidget.apply(this, arguments)
-}
-
-Object.defineProperty(
-  BaseHook.prototype, 'value',
-  Object.getOwnPropertyDescriptor(BaseWidget.prototype, 'value')
-)
-
-BaseHook.prototype.set = BaseWidget.prototype.set
-
-BaseHook.prototype.hook = function(/*node, prop, prev*/) {}
-BaseHook.prototype.unhook = function(/*node, prop, next*/) {}
-
-},{"../widget/base":17}],5:[function(require,module,exports){
-'use strict'
-
-var BaseHook = require('./base')
-
-var BooleanAttributeHook = module.exports = function() {
-  BaseHook.apply(this, arguments)
-}
-
-BooleanAttributeHook.prototype = Object.create(BaseHook.prototype, {
-  constructor: { value: BooleanAttributeHook }
-})
-
-var BOOLEAN = ['checked', 'selected', 'disabled']
-BooleanAttributeHook.isBooleanAttribute = function(node, attr) {
-  return BOOLEAN.indexOf(attr.name) > -1
-}
-
-BooleanAttributeHook.prototype.hook = function(node, prop) {
-  if (node.type === 'radio' && prop === 'checked') {
-    node[prop] = String(this.value) === node.value
-  } else {
-    node[prop] = this.value ? true : false
-  }
-
-  if (prop === 'checked') {
-    var self = this
-    node.addEventListener('change', this._onchange = function() {
-      switch (node.type) {
-        case 'checkbox':
-          self.value = node[prop]
-          break
-        case 'radio':
-          if (node.value === 'true' || node.value === 'false') {
-            self.value = node.value === 'true'
-          } else {
-            self.value = node.value
-          }
-          break
-      }
-    })
-  }
-}
-
-BooleanAttributeHook.prototype.unhook = function (node) {
-  if (this._onchange) {
-    node.removeEventListener('change', this._onchange)
-  }
-}
-
-},{"./base":4}],6:[function(require,module,exports){
-'use strict'
-
-var BaseHook = require('./base')
-
-var InputHook = module.exports = function() {
-  BaseHook.apply(this, arguments)
-}
-
-InputHook.prototype = Object.create(BaseHook.prototype, {
-  constructor: { value: InputHook }
-})
-
-InputHook.prototype.hook = function(node) {
-  var value = this.value
-
-  // <select value="{{ foobar }}"></select>
-  if (node.tagName === 'SELECT') {
-    if (value === undefined || value === '') {
-      return
-    }
-
-    // also update the selected html attribute, to make reset buttons work
-    // as expected
-    var selected = node.querySelectorAll('option[selected]')
-    for (var i = 0; i < selected.length; ++i) {
-      selected[i].removeAttribute('selected')
-    }
-    var option = node.querySelector('option[value="' + value + '"]')
-    if (option) {
-      option.setAttribute('selected', '')
-      option.selected = true
-    }
-  }
-  // otherwise
-  else {
-    node.value = value || ''
-  }
-
-  var self = this
-  node.addEventListener('change', this._onchange = function() {
-    var val = self.set(this.value)
-    if (val !== this.value) {
-      this.value = val
-    }
-  })
-}
-
-InputHook.prototype.unhook = function (node) {
-  if (this._onchange) {
-    node.removeEventListener('change', this._onchange)
-  }
-}
-
-},{"./base":4}],7:[function(require,module,exports){
+},{}],7:[function(require,module,exports){
 'use strict'
 
 var parser = require('./parser')
@@ -553,153 +1779,159 @@ Object.defineProperties(exports, {
   }
 })
 
-},{"./bind":1,"./filter":2,"./model":12,"./parser":14,"./utils":16}],8:[function(require,module,exports){
+},{"./bind":5,"./filter":6,"./model":12,"./parser":17,"./utils":19}],8:[function(require,module,exports){
 'use strict'
 
-var BaseWidget = require('../widget/base')
+const BaseNode = require('../node/base')
 
-var BaseMixin = module.exports = function() {
-  BaseWidget.apply(this, arguments)
-}
-
-Object.defineProperty(
-  BaseMixin.prototype, 'value',
-  Object.getOwnPropertyDescriptor(BaseWidget.prototype, 'value')
-)
-
-BaseMixin.prototype.set = BaseWidget.prototype.set
-
-BaseMixin.prototype.execute = function() {}
-
-},{"../widget/base":17}],9:[function(require,module,exports){
-'use strict'
-
-var BaseMixin = require('./base')
-
-var IfMixin = module.exports = function IfMixin() {
-  BaseMixin.apply(this, arguments)
-}
-
-IfMixin.prototype = Object.create(BaseMixin.prototype, {
-  constructor: { value: IfMixin },
-  condition:   {
-    get: function() {
-      var result = this.value
-      return result && result !== 'false'
-    },
-    enumerable: true
+module.exports = class BaseMixin extends BaseNode {
+  constructor(template) {
+    super(template)
   }
-})
 
-IfMixin.property = 'if'
-
-IfMixin.isIfMixin = function(node) {
-  return node.tagName === 'TEMPLATE' && node.hasAttribute('if')
+  execute() {
+    // abstract
+  }
 }
 
-IfMixin.prototype.execute = function(content) {
-  if (this.template.isEmpty) {
-    this.content.render()
+
+},{"../node/base":13}],9:[function(require,module,exports){
+'use strict'
+
+const BaseMixin = require('./base')
+
+module.exports = class IfMixin extends BaseMixin {
+  constructor(template, content) {
+    super(template)
+
+    this.content = content
+  }
+
+  get condition() {
+    const result = this.value
+    return result && result !== 'false'
+  }
+
+  execute() {
+    if (this.template.isEmpty) {
+      // TODO: What is this?
+      // this.content.render()
+      return []
+    }
+
+    if (this.condition) {
+      return this.content(this.locals)
+    }
+
     return []
   }
 
-  if (this.condition) {
-    return content(this.locals)
+  static get property() {
+    return 'if'
   }
 
-  return []
+  static isIfMixin(node) {
+    return node.tagName === 'TEMPLATE' && node.hasAttribute(this.property)
+  }
 }
+
 
 },{"./base":8}],10:[function(require,module,exports){
 'use strict'
 
-var BaseMixin = require('./base')
-var Model = require('../model')
+const BaseMixin = require('./base')
+const Model = require('../model')
 
-var RepeatMixin = module.exports = function RepeatMixin() {
-  BaseMixin.apply(this, arguments)
-}
+module.exports = class RepeatMixin extends BaseMixin {
+  constructor(template, content) {
+    super(template)
 
-RepeatMixin.prototype = Object.create(BaseMixin.prototype, {
-  constructor: { value: RepeatMixin }
-})
-
-RepeatMixin.property = 'repeat'
-
-RepeatMixin.isRepeatMixin = function(node) {
-  return node.tagName === 'TEMPLATE' && node.hasAttribute('repeat')
-}
-
-RepeatMixin.prototype.execute = function(content) {
-  var value = this.value
-  if (!value) {
-    return []
+    this.content = content
   }
 
-  var self = this
-  var children = []
+  execute() {
+    const value = this.value
+    if (!value) {
+      return []
+    }
 
-  value.forEach(function(row, i) {
-    var model = {
-      get: function() {
-        return self.value && (Array.isArray(self.value) ? self.value[i] : self.value.get(i))
-      },
-      set: function(val) {
-        if (Array.isArray(self.value)) {
-          self.value[i] = val
-        } else {
-          self.value.set(i, val)
+    const children = []
+
+    value.forEach((row, i) => {
+      const model = {
+        get: () => {
+          return this.value && (Array.isArray(this.value) ? this.value[i] : this.value.get(i))
+        },
+        // TODO: used?
+        set: val => {
+          console.log('SET')
+          if (Array.isArray(this.value)) {
+            this.value[i] = val
+          } else {
+            this.value.set(i, val)
+          }
         }
       }
-    }
 
-    var locals = self.locals.slice()
-    var alias = this.contents[0].alias
+      const locals = this.locals.slice()
+      const alias = this.contents[0].alias
 
-    if (alias) {
-      if (Array.isArray(alias)) {
-        var local = {}
-        local[alias[0]] = i
-        locals.unshift(local)
-        alias = alias[1]
+      if (alias) {
+        if (Array.isArray(alias)) {
+          const local = {}
+          local[alias[0]] = i
+          locals.unshift(local)
+          alias = alias[1]
+        }
+
+        locals.unshift(Model.alias(alias, model))
+      } else {
+        locals.unshift(new Model(model))
       }
 
-      locals.unshift(Model.alias(alias, model))
-    } else {
-      locals.unshift(new Model(model))
-    }
+      const item = model.get()
+      const id = item.id
 
-    children.push.apply(children, content(locals, '.' + i))
-  }, this)
+      children.push.apply(children, this.content(locals, id))
+    }, this)
 
-  return children
+    return children
+  }
+
+  static get property() {
+    return 'repeat'
+  }
+
+  static isRepeatMixin(node) {
+    return node.tagName === 'TEMPLATE' && node.hasAttribute(this.property)
+  }
 }
+
 
 },{"../model":12,"./base":8}],11:[function(require,module,exports){
 'use strict'
 
-var IfMixin = require('./if')
+const IfMixin = require('./if')
 
-var UnlessMixin = module.exports = function UnlessMixin() {
-  IfMixin.apply(this, arguments)
-}
-
-UnlessMixin.prototype = Object.create(IfMixin.prototype, {
-  constructor: { value: UnlessMixin },
-  condition:   {
-    get: function() {
-      var result = this.value
-      return !(result && result !== 'false')
-    },
-    enumerable: true
+module.exports = class UnlessMixin extends IfMixin {
+  constructor(template, content) {
+    super(template, content)
   }
-})
 
-UnlessMixin.property = 'unless'
+  get condition() {
+    const result = this.value
+    return !(result && result !== 'false')
+  }
 
-UnlessMixin.isUnlessMixin = function(node) {
-  return node.tagName === 'TEMPLATE' && node.hasAttribute('unless')
+  static get property() {
+    return 'unless'
+  }
+
+  static isUnlessMixin(node) {
+    return node.tagName === 'TEMPLATE' && node.hasAttribute(this.property)
+  }
 }
+
 
 },{"./if":9}],12:[function(require,module,exports){
 'use strict'
@@ -717,6 +1949,7 @@ Model.isModel = function(val) {
       && typeof val.setFn === 'function'))
 }
 
+// TODO: remove
 Model.updateProperty = function(obj, prop, val) {
   obj[prop] = val
   return obj
@@ -732,6 +1965,7 @@ Model.prototype.get = function() {
   }
 }
 
+// TODO: used?
 Model.prototype.set = function(val) {
   if (this.setFn) {
     this.setFn(val)
@@ -778,6 +2012,136 @@ Model.alias = function(alias, fns) {
 }
 
 },{}],13:[function(require,module,exports){
+'use strict'
+
+const filter = require('../filter').filter
+
+module.exports = class BaseNode {
+  constructor(template) {
+    this.template = template
+  }
+
+  get value() {
+    if (this.template.isSingleExpression) {
+      return this.contents[0].get()
+    } else {
+      return this.contents.map(function(val) {
+        val = val.valueOf()
+        if (val === undefined || val === null) {
+          return ''
+        }
+        val = String(val)
+        if (val === '[object Object]') {
+          return ''
+        }
+        return val
+      }).join('')
+    }
+  }
+
+  // TODO: used?
+  set value(val) {
+    this.set(val)
+  }
+
+  set(val) {
+    if (this.template.isSingleExpression) {
+      return this.contents[0].set(val)
+    }
+
+    return val
+  }
+
+  render() {
+    // abstract
+  }
+
+  update(locals) {
+    if (!this.template) {
+      return
+    }
+
+    this.contents = this.template.compile(locals, { filter: filter }) || []
+    this.locals   = locals
+    if (!Array.isArray(this.contents)) {
+      this.contents = [this.contents]
+    }
+  }
+}
+
+
+},{"../filter":6}],14:[function(require,module,exports){
+'use strict'
+
+const BaseNode = require('./base')
+const idom = require('incremental-dom')
+
+module.exports = class HTMLNode extends BaseNode {
+  constructor(template) {
+    super(template)
+
+    this.before = null
+    this.fragment = null
+  }
+
+  render() {
+    const value = this.value
+    if (value !== this.before) {
+      this.before = value
+      this.fragment = document.createElement('div')
+      this.fragment.innerHTML = value
+    }
+
+    dom2idom(this.fragment)
+  }
+}
+
+function dom2idom(node) {
+  switch (node.nodeType) {
+    case Node.ELEMENT_NODE:
+      const tagName = node.tagName.toLowerCase()
+      idom.elementOpenStart(tagName)
+
+      for (let i = 0, len = node.attributes.length; i < len; ++i) {
+        const attr = node.attributes[i]
+        idom.attr(attr.name, attr.value)
+      }
+
+      idom.elementOpenEnd()
+
+      let child = node.firstChild
+      while (child) {
+        dom2idom(child)
+        child = child.nextSibling
+      }
+
+      idom.elementClose(tagName)
+      break
+    case Node.TEXT_NODE:
+      idom.text(node.nodeValue)
+      break
+  }
+}
+
+
+},{"./base":13,"incremental-dom":1}],15:[function(require,module,exports){
+'use strict'
+
+const BaseNode = require('./base')
+const idom = require('incremental-dom')
+
+module.exports = class TextNode extends BaseNode {
+  constructor(template) {
+    super(template)
+  }
+
+  render() {
+    idom.text(this.value)
+  }
+}
+
+
+},{"./base":13,"incremental-dom":1}],16:[function(require,module,exports){
 /*eslint-disable no-constant-condition, no-loop-func*/
 'use strict'
 
@@ -1000,7 +2364,7 @@ exports.Filter = function(name, args) {
   this.args = args
 }
 
-},{"../model":12}],14:[function(require,module,exports){
+},{"../model":12}],17:[function(require,module,exports){
 'use strict'
 
 var parser = require('./parser').parser
@@ -1014,7 +2378,7 @@ function parse(input) {
 
 exports.parse = parse
 
-},{"./ast":13,"./parser":15}],15:[function(require,module,exports){
+},{"./ast":16,"./parser":18}],18:[function(require,module,exports){
 (function (process){
 /* parser generated by jison 0.4.15 */
 /*
@@ -1699,7 +3063,7 @@ if (typeof module !== 'undefined' && require.main === module) {
 }
 }
 }).call(this,require('_process'))
-},{"_process":23,"fs":22,"path":26}],16:[function(require,module,exports){
+},{"_process":21,"fs":20,"path":22}],19:[function(require,module,exports){
 'use strict'
 
 function isTemplate(el) {
@@ -1753,193 +3117,9 @@ exports.isTemplate  = isTemplate
 exports.cloneNode   = cloneNode
 exports.importNode  = importNode
 
-},{}],17:[function(require,module,exports){
-'use strict'
+},{}],20:[function(require,module,exports){
 
-var filter = require('../filter').filter
-
-var BaseWidget = module.exports = function(id, locals, template) {
-  this.key       = id
-  this.locals    = locals
-  this.template  = template
-
-  this.contents  = template && template.compile(locals, { filter: filter }) || []
-  if (!Array.isArray(this.contents)) {
-    this.contents = [this.contents]
-  }
-}
-
-Object.defineProperties(BaseWidget.prototype, {
-  value: {
-    get: function() {
-      if (this.template.isSingleExpression) {
-        return this.contents[0].get()
-      } else {
-        return this.contents.map(function(val) {
-          val = val.valueOf()
-          if (val === undefined || val === null) {
-            return ''
-          }
-          val = String(val)
-          if (val === '[object Object]') {
-            return ''
-          }
-          return val
-        }).join('')
-      }
-    },
-    set: function(val) {
-      this.set(val)
-    },
-    enumerable: true
-  }
-})
-
-BaseWidget.prototype.type = 'Widget'
-
-BaseWidget.prototype.set = function(val) {
-  if (this.template.isSingleExpression) {
-    return this.contents[0].set(val)
-  }
-
-  return val
-}
-
-BaseWidget.prototype.init    = function() {}
-BaseWidget.prototype.destroy = function() {}
-
-BaseWidget.prototype.update  = function(prev, el) {
-  if (this.locals !== prev.locals) {
-    return this._update(el)
-  }
-
-  return null
-}
-
-BaseWidget.prototype._update = function() {
-  return this.init()
-}
-
-},{"../filter":2}],18:[function(require,module,exports){
-'use strict'
-
-var BaseWidget = require('./base')
-
-var HTMLWidget = module.exports = function() {
-  BaseWidget.apply(this, arguments)
-}
-
-HTMLWidget.prototype = Object.create(BaseWidget.prototype, {
-  constructor: { value: HTMLWidget }
-})
-
-HTMLWidget.prototype.init = function() {
-  var fragment = document.createDocumentFragment()
-  fragment.appendChild(document.createComment('{' + this.key))
-
-  var tmp = document.createElement('div')
-  tmp.innerHTML = this.value
-
-  for (var child = tmp.firstChild; child; child = tmp.firstChild) {
-    fragment.appendChild(child)
-  }
-
-  fragment.appendChild(document.createComment(this.key + '}'))
-
-  return fragment
-}
-
-HTMLWidget.prototype._update = function(startNode) {
-  if (startNode.nodeType === Node.COMMENT_NODE && startNode.textContent.substr(1) === this.key.toString()) {
-    // remove DOMNodes between the fragments
-    // start and end markers
-    var node, next = startNode.nextSibling
-    while ((node = next).nodeType !== Node.COMMENT_NODE || node.textContent !== this.key + '}') {
-      next = node.nextSibling
-      node.parentNode.removeChild(node)
-    }
-  }
-
-  return this.init()
-}
-
-
-},{"./base":17}],19:[function(require,module,exports){
-'use strict'
-
-var applyProperties = require('virtual-dom/vdom/apply-properties')
-var cloneNode = require('../utils').cloneNode
-
-var TemplateWidget = module.exports = function(id, locals, template, properties) {
-  this.key        = id
-  this.locals     = locals
-  this.template   = template
-  this.properties = properties
-}
-
-TemplateWidget.prototype.type = 'Widget'
-
-TemplateWidget.prototype.init = function() {
-  var template = document.createElement(
-    'template',
-    this.template.getAttribute('is')
-  )
-
-  applyProperties(template, this.properties(this.locals))
-
-  for (var child = this.template.content.firstChild; child; child = child.nextSibling) {
-    template.content.appendChild(cloneNode(child, true))
-  }
-
-  template.locals = this.locals
-
-  return template
-}
-
-TemplateWidget.prototype.update = function(prev, el) {
-  if (el && el instanceof HTMLElement) {
-    applyProperties(el, this.properties(this.locals))
-  }
-
-  return el
-}
-
-},{"../utils":16,"virtual-dom/vdom/apply-properties":29}],20:[function(require,module,exports){
-'use strict'
-
-var BaseWidget = require('./base')
-
-var TextWidget = module.exports = function() {
-  BaseWidget.apply(this, arguments)
-
-  this.oldValue = undefined
-}
-
-TextWidget.prototype = Object.create(BaseWidget.prototype, {
-  constructor: { value: TextWidget }
-})
-
-TextWidget.prototype.init = function() {
-  return document.createTextNode(this.oldValue = this.value)
-}
-
-TextWidget.prototype.update  = function(prev, el) {
-  if (this.value !== this.oldValue) {
-    return this._update(el)
-  }
-
-  return null
-}
-
-TextWidget.prototype._update = function(el) {
-  el.nodeValue = this.oldValue = this.value
-}
-
-},{"./base":17}],21:[function(require,module,exports){
-
-},{}],22:[function(require,module,exports){
-arguments[4][21][0].apply(exports,arguments)
-},{"dup":21}],23:[function(require,module,exports){
+},{}],21:[function(require,module,exports){
 // shim for using process in browser
 
 var process = module.exports = {};
@@ -2032,33 +3212,7 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],24:[function(require,module,exports){
-(function (global){
-var topLevel = typeof global !== 'undefined' ? global :
-    typeof window !== 'undefined' ? window : {}
-var minDoc = require('min-document');
-
-if (typeof document !== 'undefined') {
-    module.exports = document;
-} else {
-    var doccy = topLevel['__GLOBAL_DOCUMENT_CACHE@4'];
-
-    if (!doccy) {
-        doccy = topLevel['__GLOBAL_DOCUMENT_CACHE@4'] = minDoc;
-    }
-
-    module.exports = doccy;
-}
-
-}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"min-document":21}],25:[function(require,module,exports){
-"use strict";
-
-module.exports = function isObject(x) {
-	return typeof x === "object" && x !== null;
-};
-
-},{}],26:[function(require,module,exports){
+},{}],22:[function(require,module,exports){
 (function (process){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -2286,1203 +3440,5 @@ var substr = 'ab'.substr(-1) === 'b'
 ;
 
 }).call(this,require('_process'))
-},{"_process":23}],27:[function(require,module,exports){
-var diff = require("./vtree/diff.js")
-
-module.exports = diff
-
-},{"./vtree/diff.js":46}],28:[function(require,module,exports){
-var patch = require("./vdom/patch.js")
-
-module.exports = patch
-
-},{"./vdom/patch.js":33}],29:[function(require,module,exports){
-var isObject = require("is-object")
-var isHook = require("../vnode/is-vhook.js")
-
-module.exports = applyProperties
-
-function applyProperties(node, props, previous) {
-    for (var propName in props) {
-        var propValue = props[propName]
-
-        if (propValue === undefined) {
-            removeProperty(node, propName, propValue, previous);
-        } else if (isHook(propValue)) {
-            removeProperty(node, propName, propValue, previous)
-            if (propValue.hook) {
-                propValue.hook(node,
-                    propName,
-                    previous ? previous[propName] : undefined)
-            }
-        } else {
-            if (isObject(propValue)) {
-                patchObject(node, props, previous, propName, propValue);
-            } else {
-                node[propName] = propValue
-            }
-        }
-    }
-}
-
-function removeProperty(node, propName, propValue, previous) {
-    if (previous) {
-        var previousValue = previous[propName]
-
-        if (!isHook(previousValue)) {
-            if (propName === "attributes") {
-                for (var attrName in previousValue) {
-                    node.removeAttribute(attrName)
-                }
-            } else if (propName === "style") {
-                for (var i in previousValue) {
-                    node.style[i] = ""
-                }
-            } else if (typeof previousValue === "string") {
-                node[propName] = ""
-            } else {
-                node[propName] = null
-            }
-        } else if (previousValue.unhook) {
-            previousValue.unhook(node, propName, propValue)
-        }
-    }
-}
-
-function patchObject(node, props, previous, propName, propValue) {
-    var previousValue = previous ? previous[propName] : undefined
-
-    // Set attributes
-    if (propName === "attributes") {
-        for (var attrName in propValue) {
-            var attrValue = propValue[attrName]
-
-            if (attrValue === undefined) {
-                node.removeAttribute(attrName)
-            } else {
-                node.setAttribute(attrName, attrValue)
-            }
-        }
-
-        return
-    }
-
-    if(previousValue && isObject(previousValue) &&
-        getPrototype(previousValue) !== getPrototype(propValue)) {
-        node[propName] = propValue
-        return
-    }
-
-    if (!isObject(node[propName])) {
-        node[propName] = {}
-    }
-
-    var replacer = propName === "style" ? "" : undefined
-
-    for (var k in propValue) {
-        var value = propValue[k]
-        node[propName][k] = (value === undefined) ? replacer : value
-    }
-}
-
-function getPrototype(value) {
-    if (Object.getPrototypeOf) {
-        return Object.getPrototypeOf(value)
-    } else if (value.__proto__) {
-        return value.__proto__
-    } else if (value.constructor) {
-        return value.constructor.prototype
-    }
-}
-
-},{"../vnode/is-vhook.js":37,"is-object":25}],30:[function(require,module,exports){
-var document = require("global/document")
-
-var applyProperties = require("./apply-properties")
-
-var isVNode = require("../vnode/is-vnode.js")
-var isVText = require("../vnode/is-vtext.js")
-var isWidget = require("../vnode/is-widget.js")
-var handleThunk = require("../vnode/handle-thunk.js")
-
-module.exports = createElement
-
-function createElement(vnode, opts) {
-    var doc = opts ? opts.document || document : document
-    var warn = opts ? opts.warn : null
-
-    vnode = handleThunk(vnode).a
-
-    if (isWidget(vnode)) {
-        return vnode.init()
-    } else if (isVText(vnode)) {
-        return doc.createTextNode(vnode.text)
-    } else if (!isVNode(vnode)) {
-        if (warn) {
-            warn("Item is not a valid virtual dom node", vnode)
-        }
-        return null
-    }
-
-    var props = vnode.properties
-    var typeExtension = props.attributes && props.attributes.is
-    var node
-
-    if (typeExtension) {
-        node = (vnode.namespace === null) ?
-                doc.createElement(vnode.tagName, typeExtension) :
-                doc.createElementNS(vnode.namespace, vnode.tagName, typeExtension)
-    } else {
-        node = (vnode.namespace === null) ?
-                doc.createElement(vnode.tagName) :
-                doc.createElementNS(vnode.namespace, vnode.tagName)
-    }
-
-    applyProperties(node, props)
-
-    var children = vnode.children
-
-    for (var i = 0; i < children.length; i++) {
-        var childNode = createElement(children[i], opts)
-        if (childNode) {
-            node.appendChild(childNode)
-        }
-    }
-
-    return node
-}
-
-},{"../vnode/handle-thunk.js":35,"../vnode/is-vnode.js":38,"../vnode/is-vtext.js":39,"../vnode/is-widget.js":40,"./apply-properties":29,"global/document":24}],31:[function(require,module,exports){
-// Maps a virtual DOM tree onto a real DOM tree in an efficient manner.
-// We don't want to read all of the DOM nodes in the tree so we use
-// the in-order tree indexing to eliminate recursion down certain branches.
-// We only recurse into a DOM node if we know that it contains a child of
-// interest.
-
-var noChild = {}
-
-module.exports = domIndex
-
-function domIndex(rootNode, tree, indices, nodes) {
-    if (!indices || indices.length === 0) {
-        return {}
-    } else {
-        indices.sort(ascending)
-        return recurse(rootNode, tree, indices, nodes, 0)
-    }
-}
-
-function recurse(rootNode, tree, indices, nodes, rootIndex) {
-    nodes = nodes || {}
-
-
-    if (rootNode) {
-        if (indexInRange(indices, rootIndex, rootIndex)) {
-            nodes[rootIndex] = rootNode
-        }
-
-        var vChildren = tree.children
-
-        if (vChildren) {
-
-            var childNodes = rootNode.childNodes
-
-            for (var i = 0; i < tree.children.length; i++) {
-                rootIndex += 1
-
-                var vChild = vChildren[i] || noChild
-                var nextIndex = rootIndex + (vChild.count || 0)
-
-                // skip recursion down the tree if there are no nodes down here
-                if (indexInRange(indices, rootIndex, nextIndex)) {
-                    recurse(childNodes[i], vChild, indices, nodes, rootIndex)
-                }
-
-                rootIndex = nextIndex
-            }
-        }
-    }
-
-    return nodes
-}
-
-// Binary search for an index in the interval [left, right]
-function indexInRange(indices, left, right) {
-    if (indices.length === 0) {
-        return false
-    }
-
-    var minIndex = 0
-    var maxIndex = indices.length - 1
-    var currentIndex
-    var currentItem
-
-    while (minIndex <= maxIndex) {
-        currentIndex = ((maxIndex + minIndex) / 2) >> 0
-        currentItem = indices[currentIndex]
-
-        if (minIndex === maxIndex) {
-            return currentItem >= left && currentItem <= right
-        } else if (currentItem < left) {
-            minIndex = currentIndex + 1
-        } else  if (currentItem > right) {
-            maxIndex = currentIndex - 1
-        } else {
-            return true
-        }
-    }
-
-    return false;
-}
-
-function ascending(a, b) {
-    return a > b ? 1 : -1
-}
-
-},{}],32:[function(require,module,exports){
-var applyProperties = require("./apply-properties")
-
-var isWidget = require("../vnode/is-widget.js")
-var VPatch = require("../vnode/vpatch.js")
-
-var updateWidget = require("./update-widget")
-
-module.exports = applyPatch
-
-function applyPatch(vpatch, domNode, renderOptions) {
-    var type = vpatch.type
-    var vNode = vpatch.vNode
-    var patch = vpatch.patch
-
-    switch (type) {
-        case VPatch.REMOVE:
-            return removeNode(domNode, vNode)
-        case VPatch.INSERT:
-            return insertNode(domNode, patch, renderOptions)
-        case VPatch.VTEXT:
-            return stringPatch(domNode, vNode, patch, renderOptions)
-        case VPatch.WIDGET:
-            return widgetPatch(domNode, vNode, patch, renderOptions)
-        case VPatch.VNODE:
-            return vNodePatch(domNode, vNode, patch, renderOptions)
-        case VPatch.ORDER:
-            reorderChildren(domNode, patch)
-            return domNode
-        case VPatch.PROPS:
-            applyProperties(domNode, patch, vNode.properties)
-            return domNode
-        case VPatch.THUNK:
-            return replaceRoot(domNode,
-                renderOptions.patch(domNode, patch, renderOptions))
-        default:
-            return domNode
-    }
-}
-
-function removeNode(domNode, vNode) {
-    var parentNode = domNode.parentNode
-
-    if (parentNode) {
-        parentNode.removeChild(domNode)
-    }
-
-    destroyWidget(domNode, vNode);
-
-    return null
-}
-
-function insertNode(parentNode, vNode, renderOptions) {
-    var newNode = renderOptions.render(vNode, renderOptions)
-
-    if (parentNode) {
-        parentNode.appendChild(newNode)
-    }
-
-    return parentNode
-}
-
-function stringPatch(domNode, leftVNode, vText, renderOptions) {
-    var newNode
-
-    if (domNode.nodeType === 3) {
-        domNode.replaceData(0, domNode.length, vText.text)
-        newNode = domNode
-    } else {
-        var parentNode = domNode.parentNode
-        newNode = renderOptions.render(vText, renderOptions)
-
-        if (parentNode && newNode !== domNode) {
-            parentNode.replaceChild(newNode, domNode)
-        }
-    }
-
-    return newNode
-}
-
-function widgetPatch(domNode, leftVNode, widget, renderOptions) {
-    var updating = updateWidget(leftVNode, widget)
-    var newNode
-
-    if (updating) {
-        newNode = widget.update(leftVNode, domNode) || domNode
-    } else {
-        newNode = renderOptions.render(widget, renderOptions)
-    }
-
-    var parentNode = domNode.parentNode
-
-    if (parentNode && newNode !== domNode) {
-        parentNode.replaceChild(newNode, domNode)
-    }
-
-    if (!updating) {
-        destroyWidget(domNode, leftVNode)
-    }
-
-    return newNode
-}
-
-function vNodePatch(domNode, leftVNode, vNode, renderOptions) {
-    var parentNode = domNode.parentNode
-    var newNode = renderOptions.render(vNode, renderOptions)
-
-    if (parentNode && newNode !== domNode) {
-        parentNode.replaceChild(newNode, domNode)
-    }
-
-    return newNode
-}
-
-function destroyWidget(domNode, w) {
-    if (typeof w.destroy === "function" && isWidget(w)) {
-        w.destroy(domNode)
-    }
-}
-
-function reorderChildren(domNode, moves) {
-    var childNodes = domNode.childNodes
-    var keyMap = {}
-    var node
-    var remove
-    var insert
-
-    for (var i = 0; i < moves.removes.length; i++) {
-        remove = moves.removes[i]
-        node = childNodes[remove.from]
-        if (remove.key) {
-            keyMap[remove.key] = node
-        }
-        domNode.removeChild(node)
-    }
-
-    var length = childNodes.length
-    for (var j = 0; j < moves.inserts.length; j++) {
-        insert = moves.inserts[j]
-        node = keyMap[insert.key]
-        // this is the weirdest bug i've ever seen in webkit
-        domNode.insertBefore(node, insert.to >= length++ ? null : childNodes[insert.to])
-    }
-}
-
-function replaceRoot(oldRoot, newRoot) {
-    if (oldRoot && newRoot && oldRoot !== newRoot && oldRoot.parentNode) {
-        oldRoot.parentNode.replaceChild(newRoot, oldRoot)
-    }
-
-    return newRoot;
-}
-
-},{"../vnode/is-widget.js":40,"../vnode/vpatch.js":43,"./apply-properties":29,"./update-widget":34}],33:[function(require,module,exports){
-var document = require("global/document")
-var isArray = require("x-is-array")
-
-var render = require("./create-element")
-var domIndex = require("./dom-index")
-var patchOp = require("./patch-op")
-module.exports = patch
-
-function patch(rootNode, patches, renderOptions) {
-    renderOptions = renderOptions || {}
-    renderOptions.patch = renderOptions.patch || patchRecursive
-    renderOptions.render = renderOptions.render || render
-
-    return renderOptions.patch(rootNode, patches, renderOptions)
-}
-
-function patchRecursive(rootNode, patches, renderOptions) {
-    var indices = patchIndices(patches)
-
-    if (indices.length === 0) {
-        return rootNode
-    }
-
-    var index = domIndex(rootNode, patches.a, indices)
-    var ownerDocument = rootNode.ownerDocument
-
-    if (!renderOptions.document && ownerDocument !== document) {
-        renderOptions.document = ownerDocument
-    }
-
-    for (var i = 0; i < indices.length; i++) {
-        var nodeIndex = indices[i]
-        rootNode = applyPatch(rootNode,
-            index[nodeIndex],
-            patches[nodeIndex],
-            renderOptions)
-    }
-
-    return rootNode
-}
-
-function applyPatch(rootNode, domNode, patchList, renderOptions) {
-    if (!domNode) {
-        return rootNode
-    }
-
-    var newNode
-
-    if (isArray(patchList)) {
-        for (var i = 0; i < patchList.length; i++) {
-            newNode = patchOp(patchList[i], domNode, renderOptions)
-
-            if (domNode === rootNode) {
-                rootNode = newNode
-            }
-        }
-    } else {
-        newNode = patchOp(patchList, domNode, renderOptions)
-
-        if (domNode === rootNode) {
-            rootNode = newNode
-        }
-    }
-
-    return rootNode
-}
-
-function patchIndices(patches) {
-    var indices = []
-
-    for (var key in patches) {
-        if (key !== "a") {
-            indices.push(Number(key))
-        }
-    }
-
-    return indices
-}
-
-},{"./create-element":30,"./dom-index":31,"./patch-op":32,"global/document":24,"x-is-array":47}],34:[function(require,module,exports){
-var isWidget = require("../vnode/is-widget.js")
-
-module.exports = updateWidget
-
-function updateWidget(a, b) {
-    if (isWidget(a) && isWidget(b)) {
-        if ("name" in a && "name" in b) {
-            return a.id === b.id
-        } else {
-            return a.init === b.init
-        }
-    }
-
-    return false
-}
-
-},{"../vnode/is-widget.js":40}],35:[function(require,module,exports){
-var isVNode = require("./is-vnode")
-var isVText = require("./is-vtext")
-var isWidget = require("./is-widget")
-var isThunk = require("./is-thunk")
-
-module.exports = handleThunk
-
-function handleThunk(a, b) {
-    var renderedA = a
-    var renderedB = b
-
-    if (isThunk(b)) {
-        renderedB = renderThunk(b, a)
-    }
-
-    if (isThunk(a)) {
-        renderedA = renderThunk(a, null)
-    }
-
-    return {
-        a: renderedA,
-        b: renderedB
-    }
-}
-
-function renderThunk(thunk, previous) {
-    var renderedThunk = thunk.vnode
-
-    if (!renderedThunk) {
-        renderedThunk = thunk.vnode = thunk.render(previous)
-    }
-
-    if (!(isVNode(renderedThunk) ||
-            isVText(renderedThunk) ||
-            isWidget(renderedThunk))) {
-        throw new Error("thunk did not return a valid node");
-    }
-
-    return renderedThunk
-}
-
-},{"./is-thunk":36,"./is-vnode":38,"./is-vtext":39,"./is-widget":40}],36:[function(require,module,exports){
-module.exports = isThunk
-
-function isThunk(t) {
-    return t && t.type === "Thunk"
-}
-
-},{}],37:[function(require,module,exports){
-module.exports = isHook
-
-function isHook(hook) {
-    return hook &&
-      (typeof hook.hook === "function" && !hook.hasOwnProperty("hook") ||
-       typeof hook.unhook === "function" && !hook.hasOwnProperty("unhook"))
-}
-
-},{}],38:[function(require,module,exports){
-var version = require("./version")
-
-module.exports = isVirtualNode
-
-function isVirtualNode(x) {
-    return x && x.type === "VirtualNode" && x.version === version
-}
-
-},{"./version":41}],39:[function(require,module,exports){
-var version = require("./version")
-
-module.exports = isVirtualText
-
-function isVirtualText(x) {
-    return x && x.type === "VirtualText" && x.version === version
-}
-
-},{"./version":41}],40:[function(require,module,exports){
-module.exports = isWidget
-
-function isWidget(w) {
-    return w && w.type === "Widget"
-}
-
-},{}],41:[function(require,module,exports){
-module.exports = "2"
-
-},{}],42:[function(require,module,exports){
-var version = require("./version")
-var isVNode = require("./is-vnode")
-var isWidget = require("./is-widget")
-var isThunk = require("./is-thunk")
-var isVHook = require("./is-vhook")
-
-module.exports = VirtualNode
-
-var noProperties = {}
-var noChildren = []
-
-function VirtualNode(tagName, properties, children, key, namespace) {
-    this.tagName = tagName
-    this.properties = properties || noProperties
-    this.children = children || noChildren
-    this.key = key != null ? String(key) : undefined
-    this.namespace = (typeof namespace === "string") ? namespace : null
-
-    var count = (children && children.length) || 0
-    var descendants = 0
-    var hasWidgets = false
-    var hasThunks = false
-    var descendantHooks = false
-    var hooks
-
-    for (var propName in properties) {
-        if (properties.hasOwnProperty(propName)) {
-            var property = properties[propName]
-            if (isVHook(property) && property.unhook) {
-                if (!hooks) {
-                    hooks = {}
-                }
-
-                hooks[propName] = property
-            }
-        }
-    }
-
-    for (var i = 0; i < count; i++) {
-        var child = children[i]
-        if (isVNode(child)) {
-            descendants += child.count || 0
-
-            if (!hasWidgets && child.hasWidgets) {
-                hasWidgets = true
-            }
-
-            if (!hasThunks && child.hasThunks) {
-                hasThunks = true
-            }
-
-            if (!descendantHooks && (child.hooks || child.descendantHooks)) {
-                descendantHooks = true
-            }
-        } else if (!hasWidgets && isWidget(child)) {
-            if (typeof child.destroy === "function") {
-                hasWidgets = true
-            }
-        } else if (!hasThunks && isThunk(child)) {
-            hasThunks = true;
-        }
-    }
-
-    this.count = count + descendants
-    this.hasWidgets = hasWidgets
-    this.hasThunks = hasThunks
-    this.hooks = hooks
-    this.descendantHooks = descendantHooks
-}
-
-VirtualNode.prototype.version = version
-VirtualNode.prototype.type = "VirtualNode"
-
-},{"./is-thunk":36,"./is-vhook":37,"./is-vnode":38,"./is-widget":40,"./version":41}],43:[function(require,module,exports){
-var version = require("./version")
-
-VirtualPatch.NONE = 0
-VirtualPatch.VTEXT = 1
-VirtualPatch.VNODE = 2
-VirtualPatch.WIDGET = 3
-VirtualPatch.PROPS = 4
-VirtualPatch.ORDER = 5
-VirtualPatch.INSERT = 6
-VirtualPatch.REMOVE = 7
-VirtualPatch.THUNK = 8
-
-module.exports = VirtualPatch
-
-function VirtualPatch(type, vNode, patch) {
-    this.type = Number(type)
-    this.vNode = vNode
-    this.patch = patch
-}
-
-VirtualPatch.prototype.version = version
-VirtualPatch.prototype.type = "VirtualPatch"
-
-},{"./version":41}],44:[function(require,module,exports){
-var version = require("./version")
-
-module.exports = VirtualText
-
-function VirtualText(text) {
-    this.text = String(text)
-}
-
-VirtualText.prototype.version = version
-VirtualText.prototype.type = "VirtualText"
-
-},{"./version":41}],45:[function(require,module,exports){
-var isObject = require("is-object")
-var isHook = require("../vnode/is-vhook")
-
-module.exports = diffProps
-
-function diffProps(a, b) {
-    var diff
-
-    for (var aKey in a) {
-        if (!(aKey in b)) {
-            diff = diff || {}
-            diff[aKey] = undefined
-        }
-
-        var aValue = a[aKey]
-        var bValue = b[aKey]
-
-        if (aValue === bValue) {
-            continue
-        } else if (isObject(aValue) && isObject(bValue)) {
-            if (getPrototype(bValue) !== getPrototype(aValue)) {
-                diff = diff || {}
-                diff[aKey] = bValue
-            } else if (isHook(bValue)) {
-                 diff = diff || {}
-                 diff[aKey] = bValue
-            } else {
-                var objectDiff = diffProps(aValue, bValue)
-                if (objectDiff) {
-                    diff = diff || {}
-                    diff[aKey] = objectDiff
-                }
-            }
-        } else {
-            diff = diff || {}
-            diff[aKey] = bValue
-        }
-    }
-
-    for (var bKey in b) {
-        if (!(bKey in a)) {
-            diff = diff || {}
-            diff[bKey] = b[bKey]
-        }
-    }
-
-    return diff
-}
-
-function getPrototype(value) {
-  if (Object.getPrototypeOf) {
-    return Object.getPrototypeOf(value)
-  } else if (value.__proto__) {
-    return value.__proto__
-  } else if (value.constructor) {
-    return value.constructor.prototype
-  }
-}
-
-},{"../vnode/is-vhook":37,"is-object":25}],46:[function(require,module,exports){
-var isArray = require("x-is-array")
-
-var VPatch = require("../vnode/vpatch")
-var isVNode = require("../vnode/is-vnode")
-var isVText = require("../vnode/is-vtext")
-var isWidget = require("../vnode/is-widget")
-var isThunk = require("../vnode/is-thunk")
-var handleThunk = require("../vnode/handle-thunk")
-
-var diffProps = require("./diff-props")
-
-module.exports = diff
-
-function diff(a, b) {
-    var patch = { a: a }
-    walk(a, b, patch, 0)
-    return patch
-}
-
-function walk(a, b, patch, index) {
-    if (a === b) {
-        return
-    }
-
-    var apply = patch[index]
-    var applyClear = false
-
-    if (isThunk(a) || isThunk(b)) {
-        thunks(a, b, patch, index)
-    } else if (b == null) {
-
-        // If a is a widget we will add a remove patch for it
-        // Otherwise any child widgets/hooks must be destroyed.
-        // This prevents adding two remove patches for a widget.
-        if (!isWidget(a)) {
-            clearState(a, patch, index)
-            apply = patch[index]
-        }
-
-        apply = appendPatch(apply, new VPatch(VPatch.REMOVE, a, b))
-    } else if (isVNode(b)) {
-        if (isVNode(a)) {
-            if (a.tagName === b.tagName &&
-                a.namespace === b.namespace &&
-                a.key === b.key) {
-                var propsPatch = diffProps(a.properties, b.properties)
-                if (propsPatch) {
-                    apply = appendPatch(apply,
-                        new VPatch(VPatch.PROPS, a, propsPatch))
-                }
-                apply = diffChildren(a, b, patch, apply, index)
-            } else {
-                apply = appendPatch(apply, new VPatch(VPatch.VNODE, a, b))
-                applyClear = true
-            }
-        } else {
-            apply = appendPatch(apply, new VPatch(VPatch.VNODE, a, b))
-            applyClear = true
-        }
-    } else if (isVText(b)) {
-        if (!isVText(a)) {
-            apply = appendPatch(apply, new VPatch(VPatch.VTEXT, a, b))
-            applyClear = true
-        } else if (a.text !== b.text) {
-            apply = appendPatch(apply, new VPatch(VPatch.VTEXT, a, b))
-        }
-    } else if (isWidget(b)) {
-        if (!isWidget(a)) {
-            applyClear = true
-        }
-
-        apply = appendPatch(apply, new VPatch(VPatch.WIDGET, a, b))
-    }
-
-    if (apply) {
-        patch[index] = apply
-    }
-
-    if (applyClear) {
-        clearState(a, patch, index)
-    }
-}
-
-function diffChildren(a, b, patch, apply, index) {
-    var aChildren = a.children
-    var orderedSet = reorder(aChildren, b.children)
-    var bChildren = orderedSet.children
-
-    var aLen = aChildren.length
-    var bLen = bChildren.length
-    var len = aLen > bLen ? aLen : bLen
-
-    for (var i = 0; i < len; i++) {
-        var leftNode = aChildren[i]
-        var rightNode = bChildren[i]
-        index += 1
-
-        if (!leftNode) {
-            if (rightNode) {
-                // Excess nodes in b need to be added
-                apply = appendPatch(apply,
-                    new VPatch(VPatch.INSERT, null, rightNode))
-            }
-        } else {
-            walk(leftNode, rightNode, patch, index)
-        }
-
-        if (isVNode(leftNode) && leftNode.count) {
-            index += leftNode.count
-        }
-    }
-
-    if (orderedSet.moves) {
-        // Reorder nodes last
-        apply = appendPatch(apply, new VPatch(
-            VPatch.ORDER,
-            a,
-            orderedSet.moves
-        ))
-    }
-
-    return apply
-}
-
-function clearState(vNode, patch, index) {
-    // TODO: Make this a single walk, not two
-    unhook(vNode, patch, index)
-    destroyWidgets(vNode, patch, index)
-}
-
-// Patch records for all destroyed widgets must be added because we need
-// a DOM node reference for the destroy function
-function destroyWidgets(vNode, patch, index) {
-    if (isWidget(vNode)) {
-        if (typeof vNode.destroy === "function") {
-            patch[index] = appendPatch(
-                patch[index],
-                new VPatch(VPatch.REMOVE, vNode, null)
-            )
-        }
-    } else if (isVNode(vNode) && (vNode.hasWidgets || vNode.hasThunks)) {
-        var children = vNode.children
-        var len = children.length
-        for (var i = 0; i < len; i++) {
-            var child = children[i]
-            index += 1
-
-            destroyWidgets(child, patch, index)
-
-            if (isVNode(child) && child.count) {
-                index += child.count
-            }
-        }
-    } else if (isThunk(vNode)) {
-        thunks(vNode, null, patch, index)
-    }
-}
-
-// Create a sub-patch for thunks
-function thunks(a, b, patch, index) {
-    var nodes = handleThunk(a, b)
-    var thunkPatch = diff(nodes.a, nodes.b)
-    if (hasPatches(thunkPatch)) {
-        patch[index] = new VPatch(VPatch.THUNK, null, thunkPatch)
-    }
-}
-
-function hasPatches(patch) {
-    for (var index in patch) {
-        if (index !== "a") {
-            return true
-        }
-    }
-
-    return false
-}
-
-// Execute hooks when two nodes are identical
-function unhook(vNode, patch, index) {
-    if (isVNode(vNode)) {
-        if (vNode.hooks) {
-            patch[index] = appendPatch(
-                patch[index],
-                new VPatch(
-                    VPatch.PROPS,
-                    vNode,
-                    undefinedKeys(vNode.hooks)
-                )
-            )
-        }
-
-        if (vNode.descendantHooks || vNode.hasThunks) {
-            var children = vNode.children
-            var len = children.length
-            for (var i = 0; i < len; i++) {
-                var child = children[i]
-                index += 1
-
-                unhook(child, patch, index)
-
-                if (isVNode(child) && child.count) {
-                    index += child.count
-                }
-            }
-        }
-    } else if (isThunk(vNode)) {
-        thunks(vNode, null, patch, index)
-    }
-}
-
-function undefinedKeys(obj) {
-    var result = {}
-
-    for (var key in obj) {
-        result[key] = undefined
-    }
-
-    return result
-}
-
-// List diff, naive left to right reordering
-function reorder(aChildren, bChildren) {
-    // O(M) time, O(M) memory
-    var bChildIndex = keyIndex(bChildren)
-    var bKeys = bChildIndex.keys
-    var bFree = bChildIndex.free
-
-    if (bFree.length === bChildren.length) {
-        return {
-            children: bChildren,
-            moves: null
-        }
-    }
-
-    // O(N) time, O(N) memory
-    var aChildIndex = keyIndex(aChildren)
-    var aKeys = aChildIndex.keys
-    var aFree = aChildIndex.free
-
-    if (aFree.length === aChildren.length) {
-        return {
-            children: bChildren,
-            moves: null
-        }
-    }
-
-    // O(MAX(N, M)) memory
-    var newChildren = []
-
-    var freeIndex = 0
-    var freeCount = bFree.length
-    var deletedItems = 0
-
-    // Iterate through a and match a node in b
-    // O(N) time,
-    for (var i = 0 ; i < aChildren.length; i++) {
-        var aItem = aChildren[i]
-        var itemIndex
-
-        if (aItem.key) {
-            if (bKeys.hasOwnProperty(aItem.key)) {
-                // Match up the old keys
-                itemIndex = bKeys[aItem.key]
-                newChildren.push(bChildren[itemIndex])
-
-            } else {
-                // Remove old keyed items
-                itemIndex = i - deletedItems++
-                newChildren.push(null)
-            }
-        } else {
-            // Match the item in a with the next free item in b
-            if (freeIndex < freeCount) {
-                itemIndex = bFree[freeIndex++]
-                newChildren.push(bChildren[itemIndex])
-            } else {
-                // There are no free items in b to match with
-                // the free items in a, so the extra free nodes
-                // are deleted.
-                itemIndex = i - deletedItems++
-                newChildren.push(null)
-            }
-        }
-    }
-
-    var lastFreeIndex = freeIndex >= bFree.length ?
-        bChildren.length :
-        bFree[freeIndex]
-
-    // Iterate through b and append any new keys
-    // O(M) time
-    for (var j = 0; j < bChildren.length; j++) {
-        var newItem = bChildren[j]
-
-        if (newItem.key) {
-            if (!aKeys.hasOwnProperty(newItem.key)) {
-                // Add any new keyed items
-                // We are adding new items to the end and then sorting them
-                // in place. In future we should insert new items in place.
-                newChildren.push(newItem)
-            }
-        } else if (j >= lastFreeIndex) {
-            // Add any leftover non-keyed items
-            newChildren.push(newItem)
-        }
-    }
-
-    var simulate = newChildren.slice()
-    var simulateIndex = 0
-    var removes = []
-    var inserts = []
-    var simulateItem
-
-    for (var k = 0; k < bChildren.length;) {
-        var wantedItem = bChildren[k]
-        simulateItem = simulate[simulateIndex]
-
-        // remove items
-        while (simulateItem === null && simulate.length) {
-            removes.push(remove(simulate, simulateIndex, null))
-            simulateItem = simulate[simulateIndex]
-        }
-
-        if (!simulateItem || simulateItem.key !== wantedItem.key) {
-            // if we need a key in this position...
-            if (wantedItem.key) {
-                if (simulateItem && simulateItem.key) {
-                    // if an insert doesn't put this key in place, it needs to move
-                    if (bKeys[simulateItem.key] !== k + 1) {
-                        removes.push(remove(simulate, simulateIndex, simulateItem.key))
-                        simulateItem = simulate[simulateIndex]
-                        // if the remove didn't put the wanted item in place, we need to insert it
-                        if (!simulateItem || simulateItem.key !== wantedItem.key) {
-                            inserts.push({key: wantedItem.key, to: k})
-                        }
-                        // items are matching, so skip ahead
-                        else {
-                            simulateIndex++
-                        }
-                    }
-                    else {
-                        inserts.push({key: wantedItem.key, to: k})
-                    }
-                }
-                else {
-                    inserts.push({key: wantedItem.key, to: k})
-                }
-                k++
-            }
-            // a key in simulate has no matching wanted key, remove it
-            else if (simulateItem && simulateItem.key) {
-                removes.push(remove(simulate, simulateIndex, simulateItem.key))
-            }
-        }
-        else {
-            simulateIndex++
-            k++
-        }
-    }
-
-    // remove all the remaining nodes from simulate
-    while(simulateIndex < simulate.length) {
-        simulateItem = simulate[simulateIndex]
-        removes.push(remove(simulate, simulateIndex, simulateItem && simulateItem.key))
-    }
-
-    // If the only moves we have are deletes then we can just
-    // let the delete patch remove these items.
-    if (removes.length === deletedItems && !inserts.length) {
-        return {
-            children: newChildren,
-            moves: null
-        }
-    }
-
-    return {
-        children: newChildren,
-        moves: {
-            removes: removes,
-            inserts: inserts
-        }
-    }
-}
-
-function remove(arr, index, key) {
-    arr.splice(index, 1)
-
-    return {
-        from: index,
-        key: key
-    }
-}
-
-function keyIndex(children) {
-    var keys = {}
-    var free = []
-    var length = children.length
-
-    for (var i = 0; i < length; i++) {
-        var child = children[i]
-
-        if (child.key) {
-            keys[child.key] = i
-        } else {
-            free.push(i)
-        }
-    }
-
-    return {
-        keys: keys,     // A hash of key name to index
-        free: free      // An array of unkeyed item indices
-    }
-}
-
-function appendPatch(apply, patch) {
-    if (apply) {
-        if (isArray(apply)) {
-            apply.push(patch)
-        } else {
-            apply = [apply, patch]
-        }
-
-        return apply
-    } else {
-        return patch
-    }
-}
-
-},{"../vnode/handle-thunk":35,"../vnode/is-thunk":36,"../vnode/is-vnode":38,"../vnode/is-vtext":39,"../vnode/is-widget":40,"../vnode/vpatch":43,"./diff-props":45,"x-is-array":47}],47:[function(require,module,exports){
-var nativeIsArray = Array.isArray
-var toString = Object.prototype.toString
-
-module.exports = nativeIsArray || isArray
-
-function isArray(obj) {
-    return toString.call(obj) === "[object Array]"
-}
-
-},{}]},{},[7])(7)
+},{"_process":21}]},{},[7])(7)
 });

@@ -18,13 +18,12 @@
   },
   "homepage": "https://github.com/rkusa/ipoxy",
   "dependencies": {
-    "virtual-dom": "rkusa/virtual-dom#ipoxy"
+    "incremental-dom": "rkusa/incremental-dom#ipoxy"
   },
   "devDependencies": {
     "browserify": "^12.0",
     "chai": "^3.0",
     "gulp": "^3.9",
-    "gulp-eslint": "^0.15",
     "jison": "^0.4",
     "mocha": "^2.2",
     "testem": "^0.9",
