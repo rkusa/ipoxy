@@ -1389,19 +1389,15 @@ idom.attributes[idom.symbols.default] = function(el, name, value) {
     }
 
     const reference = value
-    var getter = function() {
-      return reference.get()
-    }
-    getter.parent = reference.obj
-    getter.key    = reference.key
-    getter.alias  = reference.alias
-
-    Object.defineProperty(el, name, {
-      get: getter,
-      set: function(val) {
-        reference.set(val)
+    Object.defineProperties(el, {
+      ['__' + name]: {
+        get: () => reference
       },
-      enumerable: true
+      [name]: {
+        get: () => reference.get(),
+        set: val => reference.set(val),
+        enumerable: true
+      }
     })
   } else {
     applyAttributeTyped(el, name, value)
@@ -1961,10 +1957,14 @@ module.exports = class UnlessMixin extends IfMixin {
 'use strict'
 
 var Model = module.exports = function(fns) {
-  this.getFn   = fns.get
-  this.setFn   = fns.set
-  this.eqlFn   = fns.eql
-  this.stateFn = fns.state
+  if (typeof fns === 'function') {
+    this.getFn = fns
+  } else {
+    this.getFn   = fns.get
+    this.setFn   = fns.set
+    this.eqlFn   = fns.eql
+    this.stateFn = fns.state
+  }
 }
 
 Model.isModel = function(val) {
