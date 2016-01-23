@@ -37,6 +37,399 @@
  */
 
 /**
+ * A cached reference to the hasOwnProperty function.
+ */
+var hasOwnProperty = Object.prototype.hasOwnProperty;
+
+/**
+ * A cached reference to the create function.
+ */
+var create = Object.create;
+
+/**
+ * Used to prevent property collisions between our "map" and its prototype.
+ * @param {!Object<string, *>} map The map to check.
+ * @param {string} property The property to check.
+ * @return {boolean} Whether map has property.
+ */
+var has = function (map, property) {
+  return hasOwnProperty.call(map, property);
+};
+
+/**
+ * Creates an map object without a prototype.
+ * @return {!Object}
+ */
+var createMap = function () {
+  return create(null);
+};
+
+/**
+ * Keeps track of information needed to perform diffs for a given DOM node.
+ * @param {!string} nodeName
+ * @param {?string=} key
+ * @constructor
+ */
+function NodeData(nodeName, key) {
+  /**
+   * The attributes and their values.
+   * @const {!Object<string, *>}
+   */
+  this.attrs = createMap();
+
+  /**
+   * An array of attribute name/value pairs, used for quickly diffing the
+   * incomming attributes to see if the DOM node's attributes need to be
+   * updated.
+   * @const {Array<*>}
+   */
+  this.attrsArr = [];
+
+  /**
+   * The incoming attributes for this Node, before they are updated.
+   * @const {!Object<string, *>}
+   */
+  this.newAttrs = createMap();
+
+  /**
+   * The key used to identify this node, used to preserve DOM nodes when they
+   * move within their parent.
+   * @const
+   */
+  this.key = key;
+
+  /**
+   * Keeps track of children within this node by their key.
+   * {?Object<string, !Element>}
+   */
+  this.keyMap = null;
+
+  /**
+   * Whether or not the keyMap is currently valid.
+   * {boolean}
+   */
+  this.keyMapValid = true;
+
+  /**
+   * The node name for this node.
+   * @const {string}
+   */
+  this.nodeName = nodeName;
+
+  /**
+   * @type {?string}
+   */
+  this.text = null;
+}
+
+/**
+ * Initializes a NodeData object for a Node.
+ *
+ * @param {Node} node The node to initialize data for.
+ * @param {string} nodeName The node name of node.
+ * @param {?string=} key The key that identifies the node.
+ * @return {!NodeData} The newly initialized data object
+ */
+exports.initData = function (node, nodeName, key) {
+  var data = new NodeData(nodeName, key);
+  node['__incrementalDOMData'] = data;
+  return data;
+};
+
+/**
+ * Retrieves the NodeData object for a Node, creating it if necessary.
+ *
+ * @param {Node} node The node to retrieve the data for.
+ * @return {!NodeData} The NodeData for this Node.
+ */
+var getData = function (node) {
+  var data = node['__incrementalDOMData'];
+
+  if (!data) {
+    var nodeName = node.nodeName.toLowerCase();
+    var key = null;
+
+    if (node instanceof Element) {
+      key = node.getAttribute('key');
+    }
+
+    data = exports.initData(node, nodeName, key);
+  }
+
+  return data;
+};
+
+/**
+ * Copyright 2015 The Incremental DOM Authors. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS-IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+exports.symbols = {
+  default: '__default',
+
+  placeholder: '__placeholder'
+};
+
+/**
+ * Applies an attribute or property to a given Element. If the value is null
+ * or undefined, it is removed from the Element. Otherwise, the value is set
+ * as an attribute.
+ * @param {!Element} el
+ * @param {string} name The attribute's name.
+ * @param {?(boolean|number|string)=} value The attribute's value.
+ */
+exports.applyAttr = function (el, name, value) {
+  if (value == null) {
+    el.removeAttribute(name);
+  } else {
+    el.setAttribute(name, value);
+  }
+};
+
+/**
+ * Applies a property to a given Element.
+ * @param {!Element} el
+ * @param {string} name The property's name.
+ * @param {*} value The property's value.
+ */
+exports.applyProp = function (el, name, value) {
+  el[name] = value;
+};
+
+/**
+ * Applies a style to an Element. No vendor prefix expansion is done for
+ * property names/values.
+ * @param {!Element} el
+ * @param {string} name The attribute's name.
+ * @param {*} style The style to set. Either a string of css or an object
+ *     containing property-value pairs.
+ */
+var applyStyle = function (el, name, style) {
+  if (typeof style === 'string') {
+    el.style.cssText = style;
+  } else {
+    el.style.cssText = '';
+    var elStyle = el.style;
+    var obj = /** @type {!Object<string,string>} */style;
+
+    for (var prop in obj) {
+      if (has(obj, prop)) {
+        elStyle[prop] = obj[prop];
+      }
+    }
+  }
+};
+
+/**
+ * Updates a single attribute on an Element.
+ * @param {!Element} el
+ * @param {string} name The attribute's name.
+ * @param {*} value The attribute's value. If the value is an object or
+ *     function it is set on the Element, otherwise, it is set as an HTML
+ *     attribute.
+ */
+var applyAttributeTyped = function (el, name, value) {
+  var type = typeof value;
+
+  if (type === 'object' || type === 'function') {
+    exports.applyProp(el, name, value);
+  } else {
+    exports.applyAttr(el, name, /** @type {?(boolean|number|string)} */value);
+  }
+};
+
+/**
+ * Calls the appropriate attribute mutator for this attribute.
+ * @param {!Element} el
+ * @param {string} name The attribute's name.
+ * @param {*} value The attribute's value.
+ */
+var updateAttribute = function (el, name, value) {
+  var data = getData(el);
+  var attrs = data.attrs;
+
+  if (attrs[name] === value) {
+    return;
+  }
+
+  var mutator = exports.attributes[name] || exports.attributes[exports.symbols.default];
+  mutator(el, name, value);
+
+  attrs[name] = value;
+};
+
+/**
+ * A publicly mutable object to provide custom mutators for attributes.
+ * @const {!Object<string, function(!Element, string, *)>}
+ */
+exports.attributes = createMap();
+
+// Special generic mutator that's called for any attribute that does not
+// have a specific mutator.
+exports.attributes[exports.symbols.default] = applyAttributeTyped;
+
+exports.attributes[exports.symbols.placeholder] = function () {};
+
+exports.attributes['style'] = applyStyle;
+
+/**
+ * Gets the namespace to create an element (of a given tag) in.
+ * @param {string} tag The tag to get the namespace for.
+ * @param {?Node} parent
+ * @return {?string} The namespace to create the tag in.
+ */
+var getNamespaceForTag = function (tag, parent) {
+  if (tag === 'svg') {
+    return 'http://www.w3.org/2000/svg';
+  }
+
+  if (getData(parent).nodeName === 'foreignObject') {
+    return null;
+  }
+
+  return parent.namespaceURI;
+};
+
+/**
+ * Creates an Element.
+ * @param {Document} doc The document with which to create the Element.
+ * @param {?Node} parent
+ * @param {string} tag The tag for the Element.
+ * @param {?string=} key A key to identify the Element.
+ * @param {?Array<*>=} statics An array of attribute name/value pairs of the
+ *     static attributes for the Element.
+ * @return {!Element}
+ */
+var createElement = function (doc, parent, tag, key, statics) {
+  var namespace = getNamespaceForTag(tag, parent);
+  var is = statics && statics[0] === 'is' && statics[1];
+  var el;
+
+  if (is) {
+    if (namespace) {
+      el = doc.createElementNS(namespace, tag, is);
+    } else {
+      el = doc.createElement(tag, is);
+    }
+  } else {
+    if (namespace) {
+      el = doc.createElementNS(namespace, tag);
+    } else {
+      el = doc.createElement(tag);
+    }
+  }
+
+  exports.initData(el, tag, key);
+
+  if (statics) {
+    for (var i = 0; i < statics.length; i += 2) {
+      updateAttribute(el, /** @type {!string}*/statics[i], statics[i + 1]);
+    }
+  }
+
+  return el;
+};
+
+/**
+ * Creates a Text Node.
+ * @param {Document} doc The document with which to create the Element.
+ * @return {!Text}
+ */
+var createText = function (doc) {
+  var node = doc.createTextNode('');
+  exports.initData(node, '#text', null);
+  return node;
+};
+
+/**
+ * Creates a mapping that can be used to look up children using a key.
+ * @param {?Node} el
+ * @return {!Object<string, !Element>} A mapping of keys to the children of the
+ *     Element.
+ */
+var createKeyMap = function (el) {
+  var map = createMap();
+  var children = el.children;
+  var count = children.length;
+
+  for (var i = 0; i < count; i += 1) {
+    var child = children[i];
+    var key = getData(child).key;
+
+    if (key) {
+      map[key] = child;
+    }
+  }
+
+  return map;
+};
+
+/**
+ * Retrieves the mapping of key to child node for a given Element, creating it
+ * if necessary.
+ * @param {?Node} el
+ * @return {!Object<string, !Node>} A mapping of keys to child Elements
+ */
+var getKeyMap = function (el) {
+  var data = getData(el);
+
+  if (!data.keyMap) {
+    data.keyMap = createKeyMap(el);
+  }
+
+  return data.keyMap;
+};
+
+/**
+ * Retrieves a child from the parent with the given key.
+ * @param {?Node} parent
+ * @param {?string=} key
+ * @return {?Node} The child corresponding to the key.
+ */
+var getChild = function (parent, key) {
+  return key ? getKeyMap(parent)[key] : null;
+};
+
+/**
+ * Registers an element as being a child. The parent will keep track of the
+ * child using the key. The child can be retrieved using the same key using
+ * getKeyMap. The provided key should be unique within the parent Element.
+ * @param {?Node} parent The parent of child.
+ * @param {string} key A key to identify the child with.
+ * @param {!Node} child The child to register.
+ */
+exports.registerChild = function (parent, key, child) {
+  getKeyMap(parent)[key] = child;
+};
+
+/**
+ * Copyright 2015 The Incremental DOM Authors. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS-IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/**
   * Keeps track whether or not we are in an attributes declaration (after
   * elementOpenStart, but before elementOpenEnd).
   * @type {boolean}
@@ -291,399 +684,6 @@ Context.prototype.notifyChanges = function () {
   }
 };
 
-/**
- * Copyright 2015 The Incremental DOM Authors. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS-IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-/**
- * A cached reference to the hasOwnProperty function.
- */
-var hasOwnProperty = Object.prototype.hasOwnProperty;
-
-/**
- * A cached reference to the create function.
- */
-var create = Object.create;
-
-/**
- * Used to prevent property collisions between our "map" and its prototype.
- * @param {!Object<string, *>} map The map to check.
- * @param {string} property The property to check.
- * @return {boolean} Whether map has property.
- */
-var has = function (map, property) {
-  return hasOwnProperty.call(map, property);
-};
-
-/**
- * Creates an map object without a prototype.
- * @return {!Object}
- */
-var createMap = function () {
-  return create(null);
-};
-
-/**
- * Keeps track of information needed to perform diffs for a given DOM node.
- * @param {!string} nodeName
- * @param {?string=} key
- * @constructor
- */
-function NodeData(nodeName, key) {
-  /**
-   * The attributes and their values.
-   * @const {!Object<string, *>}
-   */
-  this.attrs = createMap();
-
-  /**
-   * An array of attribute name/value pairs, used for quickly diffing the
-   * incomming attributes to see if the DOM node's attributes need to be
-   * updated.
-   * @const {Array<*>}
-   */
-  this.attrsArr = [];
-
-  /**
-   * The incoming attributes for this Node, before they are updated.
-   * @const {!Object<string, *>}
-   */
-  this.newAttrs = createMap();
-
-  /**
-   * The key used to identify this node, used to preserve DOM nodes when they
-   * move within their parent.
-   * @const
-   */
-  this.key = key;
-
-  /**
-   * Keeps track of children within this node by their key.
-   * {?Object<string, !Element>}
-   */
-  this.keyMap = null;
-
-  /**
-   * Whether or not the keyMap is currently valid.
-   * {boolean}
-   */
-  this.keyMapValid = true;
-
-  /**
-   * The node name for this node.
-   * @const {string}
-   */
-  this.nodeName = nodeName;
-
-  /**
-   * @type {?string}
-   */
-  this.text = null;
-}
-
-/**
- * Initializes a NodeData object for a Node.
- *
- * @param {Node} node The node to initialize data for.
- * @param {string} nodeName The node name of node.
- * @param {?string=} key The key that identifies the node.
- * @return {!NodeData} The newly initialized data object
- */
-var initData = function (node, nodeName, key) {
-  var data = new NodeData(nodeName, key);
-  node['__incrementalDOMData'] = data;
-  return data;
-};
-
-/**
- * Retrieves the NodeData object for a Node, creating it if necessary.
- *
- * @param {Node} node The node to retrieve the data for.
- * @return {!NodeData} The NodeData for this Node.
- */
-var getData = function (node) {
-  var data = node['__incrementalDOMData'];
-
-  if (!data) {
-    var nodeName = node.nodeName.toLowerCase();
-    var key = null;
-
-    if (node instanceof Element) {
-      key = node.getAttribute('key');
-    }
-
-    data = initData(node, nodeName, key);
-  }
-
-  return data;
-};
-
-/**
- * Copyright 2015 The Incremental DOM Authors. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS-IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-exports.symbols = {
-  default: '__default',
-
-  placeholder: '__placeholder'
-};
-
-/**
- * Applies an attribute or property to a given Element. If the value is null
- * or undefined, it is removed from the Element. Otherwise, the value is set
- * as an attribute.
- * @param {!Element} el
- * @param {string} name The attribute's name.
- * @param {?(boolean|number|string)=} value The attribute's value.
- */
-exports.applyAttr = function (el, name, value) {
-  if (value == null) {
-    el.removeAttribute(name);
-  } else {
-    el.setAttribute(name, value);
-  }
-};
-
-/**
- * Applies a property to a given Element.
- * @param {!Element} el
- * @param {string} name The property's name.
- * @param {*} value The property's value.
- */
-exports.applyProp = function (el, name, value) {
-  el[name] = value;
-};
-
-/**
- * Applies a style to an Element. No vendor prefix expansion is done for
- * property names/values.
- * @param {!Element} el
- * @param {string} name The attribute's name.
- * @param {*} style The style to set. Either a string of css or an object
- *     containing property-value pairs.
- */
-var applyStyle = function (el, name, style) {
-  if (typeof style === 'string') {
-    el.style.cssText = style;
-  } else {
-    el.style.cssText = '';
-    var elStyle = el.style;
-    var obj = /** @type {!Object<string,string>} */style;
-
-    for (var prop in obj) {
-      if (has(obj, prop)) {
-        elStyle[prop] = obj[prop];
-      }
-    }
-  }
-};
-
-/**
- * Updates a single attribute on an Element.
- * @param {!Element} el
- * @param {string} name The attribute's name.
- * @param {*} value The attribute's value. If the value is an object or
- *     function it is set on the Element, otherwise, it is set as an HTML
- *     attribute.
- */
-var applyAttributeTyped = function (el, name, value) {
-  var type = typeof value;
-
-  if (type === 'object' || type === 'function') {
-    exports.applyProp(el, name, value);
-  } else {
-    exports.applyAttr(el, name, /** @type {?(boolean|number|string)} */value);
-  }
-};
-
-/**
- * Calls the appropriate attribute mutator for this attribute.
- * @param {!Element} el
- * @param {string} name The attribute's name.
- * @param {*} value The attribute's value.
- */
-var updateAttribute = function (el, name, value) {
-  var data = getData(el);
-  var attrs = data.attrs;
-
-  if (attrs[name] === value) {
-    return;
-  }
-
-  var mutator = exports.attributes[name] || exports.attributes[exports.symbols.default];
-  mutator(el, name, value);
-
-  attrs[name] = value;
-};
-
-/**
- * A publicly mutable object to provide custom mutators for attributes.
- * @const {!Object<string, function(!Element, string, *)>}
- */
-exports.attributes = createMap();
-
-// Special generic mutator that's called for any attribute that does not
-// have a specific mutator.
-exports.attributes[exports.symbols.default] = applyAttributeTyped;
-
-exports.attributes[exports.symbols.placeholder] = function () {};
-
-exports.attributes['style'] = applyStyle;
-
-/**
- * Gets the namespace to create an element (of a given tag) in.
- * @param {string} tag The tag to get the namespace for.
- * @param {?Node} parent
- * @return {?string} The namespace to create the tag in.
- */
-var getNamespaceForTag = function (tag, parent) {
-  if (tag === 'svg') {
-    return 'http://www.w3.org/2000/svg';
-  }
-
-  if (getData(parent).nodeName === 'foreignObject') {
-    return null;
-  }
-
-  return parent.namespaceURI;
-};
-
-/**
- * Creates an Element.
- * @param {Document} doc The document with which to create the Element.
- * @param {?Node} parent
- * @param {string} tag The tag for the Element.
- * @param {?string=} key A key to identify the Element.
- * @param {?Array<*>=} statics An array of attribute name/value pairs of the
- *     static attributes for the Element.
- * @return {!Element}
- */
-var createElement = function (doc, parent, tag, key, statics) {
-  var namespace = getNamespaceForTag(tag, parent);
-  var is = statics && statics[0] === 'is' && statics[1];
-  var el;
-
-  if (is) {
-    if (namespace) {
-      el = doc.createElementNS(namespace, tag, is);
-    } else {
-      el = doc.createElement(tag, is);
-    }
-  } else {
-    if (namespace) {
-      el = doc.createElementNS(namespace, tag);
-    } else {
-      el = doc.createElement(tag);
-    }
-  }
-
-  initData(el, tag, key);
-
-  if (statics) {
-    for (var i = 0; i < statics.length; i += 2) {
-      updateAttribute(el, /** @type {!string}*/statics[i], statics[i + 1]);
-    }
-  }
-
-  return el;
-};
-
-/**
- * Creates a Text Node.
- * @param {Document} doc The document with which to create the Element.
- * @return {!Text}
- */
-var createText = function (doc) {
-  var node = doc.createTextNode('');
-  initData(node, '#text', null);
-  return node;
-};
-
-/**
- * Creates a mapping that can be used to look up children using a key.
- * @param {?Node} el
- * @return {!Object<string, !Element>} A mapping of keys to the children of the
- *     Element.
- */
-var createKeyMap = function (el) {
-  var map = createMap();
-  var children = el.children;
-  var count = children.length;
-
-  for (var i = 0; i < count; i += 1) {
-    var child = children[i];
-    var key = getData(child).key;
-
-    if (key) {
-      map[key] = child;
-    }
-  }
-
-  return map;
-};
-
-/**
- * Retrieves the mapping of key to child node for a given Element, creating it
- * if necessary.
- * @param {?Node} el
- * @return {!Object<string, !Node>} A mapping of keys to child Elements
- */
-var getKeyMap = function (el) {
-  var data = getData(el);
-
-  if (!data.keyMap) {
-    data.keyMap = createKeyMap(el);
-  }
-
-  return data.keyMap;
-};
-
-/**
- * Retrieves a child from the parent with the given key.
- * @param {?Node} parent
- * @param {?string=} key
- * @return {?Node} The child corresponding to the key.
- */
-var getChild = function (parent, key) {
-  return key ? getKeyMap(parent)[key] : null;
-};
-
-/**
- * Registers an element as being a child. The parent will keep track of the
- * child using the key. The child can be retrieved using the same key using
- * getKeyMap. The provided key should be unique within the parent Element.
- * @param {?Node} parent The parent of child.
- * @param {string} key A key to identify the child with.
- * @param {!Node} child The child to register.
- */
-var registerChild = function (parent, key, child) {
-  getKeyMap(parent)[key] = child;
-};
-
 /** @type {?Context} */
 var context = null;
 
@@ -844,7 +844,7 @@ var alignWithDOM = function (nodeName, key, statics) {
     }
 
     if (key) {
-      registerChild(currentParent, key, node);
+      exports.registerChild(currentParent, key, node);
     }
 
     context.markCreated(node);
@@ -1488,6 +1488,8 @@ function start() {
             handler.before = handler.model.state()
           }
 
+          console.log('ipoxy: has changed')
+
           // call update callback
           o.callback()
         }
@@ -1527,19 +1529,24 @@ module.exports = function bind(target, template, locals) {
 
   locals = Array.isArray(locals) ? locals : [locals]
 
-  target.innerHTML = '' // clear
-  // const root = target.cloneNode(false)
   const root = target
+  let content = root
   if (template) {
-    root.appendChild(importNode(template.content, true))
+    content.innerHTML = '' // clear
+    content = importNode(template.content, true)
   }
 
-  const update = prepare(root)
+  const update = prepare(root, content)
   const updateFn = function() {
-    idom.patchElement(target, update(locals))
+    idom.patch(target, update(locals))
   }
 
-  updateFn()
+  // patch content in place
+  idom.patch(content, update(locals))
+  if (template) {
+    // append result to root, if a template was used
+    root.appendChild(content)
+  }
 
   const handlers = locals
   .filter(local => Model.isModel(local))
@@ -1553,25 +1560,23 @@ module.exports = function bind(target, template, locals) {
   return updateFn
 }
 
-function prepare(root) {
-  const callbacks = visitElementNode(root)
-
+function prepare(root, content) {
+  const ctx = { id: 0 }
+  const children = prepareChildren(ctx, root, content)
   return function(locals) {
     return function() {
-      callbacks.forEach(function(callback) {
-        callback(locals)
-      })
+      children(locals)
     }
   }
 }
 
-function prepareChildren(node) {
+function prepareChildren(ctx, node, content) {
   const callbacks = []
 
-  for (let child = node.firstChild; child; child = child.nextSibling) {
+  for (let child = content.firstChild; child; child = child.nextSibling) {
     switch (child.nodeType) {
       case Node.ELEMENT_NODE:
-        callbacks.push.apply(callbacks, visitElementNode(child))
+        callbacks.push.apply(callbacks, visitElementNode(ctx, node, child))
         break
       case Node.TEXT_NODE:
         callbacks.push.apply(callbacks, visitTextNode(child))
@@ -1598,7 +1603,9 @@ const InputAttribute    = require('./attribute/input')
 
 const MIXINS = [IfMixin, UnlessMixin, RepeatMixin]
 
-function visitElementNode(node) {
+function visitElementNode(ctx, parent, node, content) {
+  const id = ++ctx.id
+
   // attributes
   const statics = []
   const attributes = []
@@ -1631,8 +1638,10 @@ function visitElementNode(node) {
     attributes.push(attribute)
   }
 
+
   // <template>
-  if (isTemplate(node)) {
+  const isTempl = isTemplate(node)
+  if (isTempl) {
     let head
 
     MIXINS.forEach(function(Mixin) {
@@ -1647,7 +1656,7 @@ function visitElementNode(node) {
                           + 'got: ' + template.source)
       }
 
-      const content = head || prepareChildren(node.content)
+      const content = head || prepareChildren(ctx, node, node.content)
       head = function(locals, keySuffix) {
         const mixin = new Mixin(template, content)
         mixin.update(locals)
@@ -1662,17 +1671,32 @@ function visitElementNode(node) {
     statics.push('content', node.content)
   }
 
-  const children = prepareChildren(node)
-  return [function(locals, id) {
-    const args = [tagName, id || null, statics]
+  idom.initData(node, tagName, id)
+  if (parent) {
+    idom.registerChild(parent, id, node)
+  }
+
+  const selfContained = node.hasAttribute('self-contained')
+  const children = !selfContained && prepareChildren(ctx, node, content || node)
+
+  return [function(locals, idOverride) {
+    // TODO: ignore statics, cause node re-use
+    const args = [tagName, id || idOverride || null, statics.slice()]
+    if (isTempl || selfContained) {
+      args.push('locals', locals)
+    }
     attributes.forEach(attr => {
       attr.update(locals)
-      args[2].push.apply(args[2], attr.statics())
+      args.push.apply(args, attr.statics())
       args.push.apply(args, attr.render())
     })
-    idom.elementOpen.apply(idom, args)
-    children(locals)
-    idom.elementClose(tagName)
+    if (selfContained) {
+      idom.elementPlaceholder.apply(idom, args)
+    } else {
+      idom.elementOpen.apply(idom, args)
+      children(locals)
+      idom.elementClose(tagName)
+    }
   }]
 }
 
@@ -3068,7 +3092,7 @@ if (typeof module !== 'undefined' && require.main === module) {
 
 function isTemplate(el) {
   // return el instanceof HTMLTemplateElement
-  return el.localName === 'template' // IE fix
+  return el && el.localName === 'template' // IE fix
 }
 
 function cloneChildren(parent, target, fn) {
