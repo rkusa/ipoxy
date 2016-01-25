@@ -1677,7 +1677,7 @@ function visitElementNode(ctx, parent, node, content) {
 
   return [function(locals, idOverride) {
     // TODO: ignore statics, cause node re-use
-    const args = [tagName, id || idOverride || null, statics.slice()]
+    const args = [tagName, idOverride || id || null, statics.slice()]
     if (isTempl || selfContained) {
       args.push('locals', locals)
     }
@@ -1687,7 +1687,10 @@ function visitElementNode(ctx, parent, node, content) {
       args.push.apply(args, attr.render())
     })
     if (selfContained) {
-      idom.elementPlaceholder.apply(idom, args)
+      const el = idom.elementPlaceholder.apply(idom, args)
+      if (el !== node && !el.hasChildNodes()) {
+        el.innerHTML = node.innerHTML
+      }
     } else {
       idom.elementOpen.apply(idom, args)
       children(locals)
@@ -1708,8 +1711,9 @@ function visitTextNode(node) {
   const template = parser.parse(node.nodeValue)
 
   if (!template.hasExpressions) {
+    const text = node.nodeValue
     return [function() {
-      idom.text(node.nodeValue)
+      idom.text(text)
     }]
   }
 
@@ -1910,9 +1914,7 @@ module.exports = class RepeatMixin extends BaseMixin {
       }
 
       const item = model.get()
-      const id = item.id
-
-      children.push.apply(children, this.content(locals, id))
+      children.push.apply(children, this.content(locals, item.id || i))
     }, this)
 
     return children
