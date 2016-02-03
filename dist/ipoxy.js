@@ -1432,7 +1432,7 @@ idom.attributes.value = function(el, name, value) {
     })
   } else {
     // idom.applyAttr(el, name, value)
-    idom.applyProp(el, name, value)
+    idom.attributes[idom.symbols.default](el, name, value)
   }
 }
 
