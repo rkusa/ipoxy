@@ -1382,33 +1382,38 @@ const idom = require('incremental-dom')
 
 const applyAttributeTyped = idom.attributes[idom.symbols.default]
 
-idom.attributes[idom.symbols.default] = function(el, name, value) {
-  if (value && typeof value === 'object' && value instanceof ast.Reference) {
-    if (name in el) {
-      return
-    }
-
-    const reference = value
-    Object.defineProperties(el, {
-      ['__' + name]: {
-        get: () => reference
-      },
-      [name]: {
-        get: () => reference.get(),
-        set: val => reference.set(val),
-        enumerable: true
+function applyWithMeta(fallback) {
+  return function(el, name, value) {
+    if (value && typeof value === 'object' && value instanceof ast.Reference) {
+      if (name in el) {
+        return
       }
-    })
-  } else {
-    applyAttributeTyped(el, name, value)
+
+      const reference = value
+      Object.defineProperties(el, {
+        ['__' + name]: {
+          get: () => reference
+        },
+        [name]: {
+          get: () => reference.get(),
+          set: val => reference.set(val),
+          enumerable: true
+        }
+      })
+    } else {
+      fallback(el, name, value)
+    }
   }
 }
+
+idom.attributes[idom.symbols.default] = applyWithMeta(applyAttributeTyped)
 
 idom.attributes.checked = function(el, name, value) {
   // idom.applyAttr(el, name, value)
   el[name] = value !== null
 }
 
+const valueFallback = applyWithMeta(idom.applyProp)
 idom.attributes.value = function(el, name, value) {
   // <select value="{{ foobar }}"></select>
   if (el.tagName === 'SELECT') {
@@ -1431,8 +1436,7 @@ idom.attributes.value = function(el, name, value) {
       }
     })
   } else {
-    // idom.applyAttr(el, name, value)
-    idom.attributes[idom.symbols.default](el, name, value)
+    valueFallback(el, name, value)
   }
 }
 
