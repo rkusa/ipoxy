@@ -1400,6 +1400,8 @@ function applyWithMeta(fallback) {
           enumerable: true
         }
       })
+
+      el.removeAttribute(name)
     } else {
       fallback(el, name, value)
     }
@@ -2332,7 +2334,9 @@ Reference.prototype.get = function() {
     result = this.obj
   } else if (this.obj && typeof this.obj.get === 'function') {
     result = this.obj.get(this.key)
-  } else {
+  }
+
+  if (!result) {
     result = this.obj && this.obj[this.key]
   }
 
