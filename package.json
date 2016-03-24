@@ -21,7 +21,7 @@
     "incremental-dom": "rkusa/incremental-dom#ipoxy"
   },
   "devDependencies": {
-    "browserify": "^12.0",
+    "browserify": "^13.0",
     "chai": "^3.0",
     "gulp": "^3.9",
     "jison": "^0.4",

@@ -1490,8 +1490,6 @@ function start() {
             handler.before = handler.model.state()
           }
 
-          console.log('ipoxy: has changed')
-
           // call update callback
           o.callback()
         }

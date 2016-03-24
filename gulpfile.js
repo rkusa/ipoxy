@@ -1,5 +1,3 @@
-/*eslint no-process-exit: 0*/
-
 'use strict'
 
 var gulp = require('gulp')
@@ -11,7 +9,7 @@ gulp.task('watch', ['browserify', 'jison'], function() {
   gulp.watch(['lib/**/*.js'], ['browserify'])
 })
 
-gulp.task('test', ['testem', 'lint'], function() {
+gulp.task('test', ['testem'], function() {
   setImmediate(function() {
     process.exit(0)
   })
@@ -29,7 +27,7 @@ gulp.task('testem', ['browserify'], function (done) {
 var browserify = require('browserify')
 var source     = require('vinyl-source-stream')
 gulp.task('browserify', function() {
-  return browserify({ entries: './lib/index.js', standalone: 'ipoxy' })
+  return browserify({ debug: true, entries: './lib/index.js', standalone: 'ipoxy' })
     .bundle()
     .pipe(source('ipoxy.js'))
     .pipe(gulp.dest('./dist'))
